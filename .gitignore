@@ -1,0 +1,8 @@
+aic_hcmc2020
+train_aic_hcmc.txt
+val_aic_hcmc.txt
+train_detect_vehicle_yolov5.txt
+val_detect_vehicle_yolov5.txt
+train_detect_vehicle_yolov4.txt
+val_detect_vehicle_yolov4.txt
+trained_weights/

@@ -1,0 +1,5 @@
+classes = 4
+train  = /home/dimitrii/python_work/vehicles_yolo/train_aic_hcmc.txt
+valid  = /home/dimitrii/python_work/vehicles_yolo/val_aic_hcmc.txt
+names = /home/dimitrii/python_work/vehicles_yolo/vehicles.names
+backup = /home/dimitrii/python_work/vehicles_yolo/trained_weights
