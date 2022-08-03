@@ -121,4 +121,7 @@ darknet detector test vehicles.data vehicles.cfg vehicles_best.weights images_sa
 darknet detector test vehicles.data vehicles.cfg vehicles_best.weights images_samples/3.jpg
 darknet detector test vehicles.data vehicles.cfg vehicles_best.weights images_samples/4.jpg
 darknet detector test vehicles.data vehicles.cfg vehicles_best.weights images_samples/5.jpg
+darknet detector test vehicles.data vehicles.cfg vehicles_best.weights images_samples/1.png
+darknet detector test vehicles.data vehicles.cfg vehicles_best.weights images_samples/2.png
+darknet detector test vehicles.data vehicles.cfg vehicles_best.weights images_samples/3.png
 ```
