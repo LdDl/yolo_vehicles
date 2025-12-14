@@ -68,7 +68,7 @@ This will:
 
 ### 4. Train Models
 
-#### YOLOv3-tiny (Darknet)
+#### YOLOv3-tiny / YOLOv4-tiny (Darknet)
 
 Requires [AlexeyAB's Darknet](https://github.com/AlexeyAB/darknet) compiled with:
 ```makefile
@@ -77,11 +77,30 @@ CUDNN=1
 OPENCV=1
 ```
 
+**Arch Linux / CachyOS users (I'm using Arch btw):** CUDA is installed at `/opt/cuda/` instead of `/usr/local/cuda/`.
+Edit `darknet/Makefile` and replace all occurrences of `/usr/local/cuda/` with `/opt/cuda/`:
+```makefile
+COMMON+= -DGPU -I/opt/cuda/include/
+LDFLAGS+= -L/opt/cuda/lib64 -lcuda -lcudart -lcublas -lcurand
+CFLAGS+= -DCUDNN -I/opt/cuda/include
+LDFLAGS+= -L/opt/cuda/lib64 -lcudnn
+```
+
+Also set ARCH for your GPU (e.g., RTX 3060 = Ampere, compute 8.6):
+```makefile
+ARCH= -gencode arch=compute_86,code=[sm_86,compute_86]
+```
+
+Build Darknet:
+```bash
+cd darknet
+make clean && make -j$(nproc)
+```
+
+Train:
 ```bash
 ./scripts/train_darknet.sh v3-tiny
 ```
-
-#### YOLOv4-tiny (Darknet)
 
 ```bash
 ./scripts/train_darknet.sh v4-tiny
