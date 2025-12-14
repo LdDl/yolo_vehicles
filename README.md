@@ -27,6 +27,7 @@ vehicles_yolo/
 │   └── vehicles.yaml               # Ultralytics data file
 ├── scripts/
 │   ├── prepare_dataset.py          # Dataset preparation
+│   ├── generate_file_lists.sh      # Generate train/val file lists
 │   ├── train_darknet.sh            # Train v3-tiny, v4-tiny
 │   └── train_ultralytics.py        # Train v8n
 ├── benchmark/                      # Rust benchmark (uses od_opencv crate)
@@ -65,6 +66,12 @@ This will:
 - Remap class IDs if needed
 - Copy labels to images directory
 - Generate train/val file lists for both Darknet and Ultralytics
+
+If your dataset already has the correct structure (`images/train`, `images/val`, `labels/train`, `labels/val`), you can skip the Python script and just generate file lists:
+
+```bash
+./scripts/generate_file_lists.sh
+```
 
 ### 4. Train Models
 
