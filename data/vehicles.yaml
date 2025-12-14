@@ -1,0 +1,17 @@
+# Ultralytics YOLO dataset configuration for vehicles detection
+# Used for training YOLOv8n
+
+# Dataset paths (relative to this file or absolute)
+path: ../aic_hcmc2020/aic_hcmc2020  # dataset root dir
+train: train.txt  # train images (relative to 'path')
+val: val.txt      # val images (relative to 'path')
+
+# Classes
+names:
+  0: car
+  1: motorbike
+  2: bus
+  3: truck
+
+# Number of classes
+nc: 4

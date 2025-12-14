@@ -1,127 +1,187 @@
-## Just set of instructions for training YOLO for counting vehicles (and similar purposes)
+# YOLO Vehicles Detection
 
-1. Download AIC HCMC 2020 challenge dataset. You can obtain it here: https://www.kaggle.com/datasets/hungkhoi/vehicle-counting-aic-hcmc-2020 .
+Training and benchmarking YOLOv3-tiny, YOLOv4-tiny, and YOLOv8n for vehicle detection.
 
-    There should be YOLO-based annotations and images in downloaded archive.
+All models are configured for **416x416** input size for fair performance comparison.
 
-2. Unzip downloaded archive. 
-    ```bash
-    ## If you are Linux user
-    unzip archive.zip
-    ```
-    
-3. Classes of vehicles are:
-    * **motorbike** - corresponds to 0-th YOLO class;
-    * **car** - 1-st
-    * **bus** - 2-d
-    * **truck** - 3-d
+## Classes
 
-4. Use [python script](main.py) to modify classes and to prepare train and test files with absolute pathes
+| ID | Class |
+|----|-------|
+| 0 | car |
+| 1 | motorbike |
+| 2 | bus |
+| 3 | truck |
 
-    ```shell
-    python3 main.py
-    ```
+## Project Structure
 
-    Notice that script contains class ID modification:
-    ```python
-    def replace_class_with_custom_id(class_id):
-        if class_id == 0:
-            return 1
-        if class_id == 1:
-            return 0
-        if class_id == 2:
-            return 2
-        if class_id == 3:
-            return 3
-    ```
-    It is done for my personal case. Your mileage may vary
-
-5. Time to train YOLO. I've picked up next setup:
-    * YOLOv3-tiny as neural network architecture. (it is just my case, you can use v4 if you want to)
-    * CUDA/cuDNN - turned on
-    * OpenCV - enabled (for displaying loss/mAP charts)
-
-    
-    5.1. Follow [AlexeyAB's fork of Darknet](https://github.com/AlexeyAB/darknet) to setup Darknet installation. In my case Makefile has next options turned on:
-        ```Makefile
-        GPU=1
-        CUDNN=1
-        OPENCV=1
-        LIBSO=1
-        ```
-
-    5.2. Prepare [class names file](vehicles.names). Change its content if you need.
-
-    5.3. Prepare [data file](vehicles.data). You must change its content to adjust your absolute pathes:
-
-    ```bash
-    # Replace '/home/dimitrii/python_work/vehicles_yolo/' with path you need
-    train  = /home/dimitrii/python_work/vehicles_yolo/train_aic_hcmc.txt
-    valid  = /home/dimitrii/python_work/vehicles_yolo/val_aic_hcmc.txt
-    names = /home/dimitrii/python_work/vehicles_yolo/vehicles.names
-    # Don't forget to create folder for storing *.weights files while training process
-    backup = /home/dimitrii/python_work/vehicles_yolo/trained_weights
-    ```
-
-    
-    5.4. Download [yolov3-tiny](https://github.com/AlexeyAB/darknet/blob/master/cfg/yolov3-tiny.cfg) configuration file
-    ```shell
-    wget 'https://github.com/AlexeyAB/darknet/blob/master/cfg/yolov3-tiny.cfg?raw=true' -O yolov3-tiny.cfg
-    ```
-    
-    **You can go to paragraph 5.11 and use prepared [vehicles.cfg](vehicles.cfg) if you want skip manual process.**
-
-
-    5.5. Modify batch and subdivisions to match your GPU capabilities (training in CPU mode is not a good idea). In my case those parameters are:
-    
-    ```
-    batch=64
-    subdivisions=2
-    ```
-
-    5.6. Change classes size.
-
-    Change following lines to be `classes=4`:
-    
-    - https://github.com/AlexeyAB/darknet/blob/master/cfg/yolov3-tiny.cfg#L135
-    - https://github.com/AlexeyAB/darknet/blob/master/cfg/yolov3-tiny.cfg#L177
-        
-    5.7. Change filters (for every `[convolutional]` layer before each `[yolo]` layer)
-
-    Change following lines to be `filters=27`. Since we have classes number = 4  therefore `filters = (classes + 5) * 3 = (4 + 5) * 3 = 9 * 3 = 27`):
-    - https://github.com/AlexeyAB/darknet/blob/master/cfg/yolov3-tiny.cfg#L127
-    - https://github.com/AlexeyAB/darknet/blob/master/cfg/yolov3-tiny.cfg#L171
-
-    5.9. Adjust `max_batches` and `steps`
-
-    `max_batches=40000`
-    - https://github.com/AlexeyAB/darknet/blob/master/cfg/yolov3-tiny.cfg#L20
-
-    `steps=max_batches*0.8,max_batches*0.9` => `steps=32000,36000`
-    - https://github.com/AlexeyAB/darknet/blob/master/cfg/yolov3-tiny.cfg#L22
-
-    5.10. Since I do not want to use fine tuned weights I'll use random one (just don't provide *.weights to `darknet` CLI).
-
-    5.11. Start training. In my case CLI call looks like:
-
-    ```shell
-    darknet detector train /home/dimitrii/python_work/vehicles_yolo/vehicles.data /home/dimitrii/python_work/vehicles_yolo/vehicles.cfg -map
-    ```
-
-    After training is done you can see similar chart
-
-    <img src="chart_vehicles.png" width="640"/>
-
-6. In case you want "ready to go" weights here they are: [vehicles_best.weights](vehicles_best.weights). mAP is about 82%
-7. Test detector
-
-```shell
-darknet detector test vehicles.data vehicles.cfg vehicles_best.weights images_samples/1.jpg
-darknet detector test vehicles.data vehicles.cfg vehicles_best.weights images_samples/2.jpg
-darknet detector test vehicles.data vehicles.cfg vehicles_best.weights images_samples/3.jpg
-darknet detector test vehicles.data vehicles.cfg vehicles_best.weights images_samples/4.jpg
-darknet detector test vehicles.data vehicles.cfg vehicles_best.weights images_samples/5.jpg
-darknet detector test vehicles.data vehicles.cfg vehicles_best.weights images_samples/1.png
-darknet detector test vehicles.data vehicles.cfg vehicles_best.weights images_samples/2.png
-darknet detector test vehicles.data vehicles.cfg vehicles_best.weights images_samples/3.png
 ```
+vehicles_yolo/
+├── configs/
+│   ├── yolov3-tiny-vehicles.cfg    # Darknet config (416x416, 4 classes)
+│   ├── yolov4-tiny-vehicles.cfg    # Darknet config (416x416, 4 classes)
+│   └── yolov8n-vehicles.yaml       # Ultralytics config (4 classes)
+├── data/
+│   ├── vehicles.names              # Class names
+│   ├── vehicles.data               # Darknet data file
+│   └── vehicles.yaml               # Ultralytics data file
+├── scripts/
+│   ├── prepare_dataset.py          # Dataset preparation
+│   ├── train_darknet.sh            # Train v3-tiny, v4-tiny
+│   └── train_ultralytics.py        # Train v8n
+├── benchmark/                      # Rust benchmark (uses od_opencv crate)
+│   ├── Cargo.toml
+│   └── src/main.rs
+├── weights/                        # Trained weights output
+├── requirements.txt
+└── README.md
+```
+
+## Quick Start
+
+### 1. Download Dataset
+
+Download the AIC HCMC 2020 dataset from [Kaggle](https://www.kaggle.com/datasets/hungkhoi/vehicle-counting-aic-hcmc-2020).
+
+```bash
+# Extract the dataset
+tar -xzf aic_hcmc2020.tar.gz
+```
+
+### 2. Install Dependencies
+
+```bash
+# Python dependencies (for YOLOv8 and dataset preparation)
+pip install -r requirements.txt
+```
+
+### 3. Prepare Dataset
+
+```bash
+python scripts/prepare_dataset.py --dataset-dir ./aic_hcmc2020/aic_hcmc2020
+```
+
+This will:
+- Remap class IDs if needed
+- Copy labels to images directory
+- Generate train/val file lists for both Darknet and Ultralytics
+
+### 4. Train Models
+
+#### YOLOv3-tiny (Darknet)
+
+Requires [AlexeyAB's Darknet](https://github.com/AlexeyAB/darknet) compiled with:
+```makefile
+GPU=1
+CUDNN=1
+OPENCV=1
+```
+
+```bash
+./scripts/train_darknet.sh v3-tiny
+```
+
+#### YOLOv4-tiny (Darknet)
+
+```bash
+./scripts/train_darknet.sh v4-tiny
+```
+
+#### YOLOv8n (Ultralytics)
+
+```bash
+python scripts/train_ultralytics.py --epochs 100 --imgsz 416
+```
+
+Options:
+- `--pretrained` - Start from COCO pretrained weights (recommended)
+- `--batch 16` - Adjust batch size for your GPU
+- `--device 0` - CUDA device ID
+
+## Benchmarking
+
+The benchmark uses [od_opencv](https://crates.io/crates/od_opencv) Rust crate for realistic deployment performance on edge devices like Jetson Nano.
+
+### Build Benchmark
+
+```bash
+cd benchmark
+cargo build --release
+```
+
+### Run Benchmark
+
+```bash
+cargo run --release -- \
+    --image ../images_samples/1.jpg \
+    --v3-weights ../weights/yolov3-tiny-vehicles.weights \
+    --v3-cfg ../configs/yolov3-tiny-vehicles.cfg \
+    --v4-weights ../weights/yolov4-tiny-vehicles.weights \
+    --v4-cfg ../configs/yolov4-tiny-vehicles.cfg \
+    --v8-onnx ../weights/yolov8n-vehicles.onnx \
+    --iterations 100
+```
+
+Options:
+- `--cuda` - Use CUDA backend (requires OpenCV with CUDA)
+- `--iterations N` - Number of benchmark iterations
+- `--warmup N` - Warmup iterations before benchmarking
+
+### Expected Output
+
+```
+╔════════════════════════════════════════════════════════╗
+║                    BENCHMARK SUMMARY                    ║
+╚════════════════════════════════════════════════════════╝
+
+Comparison (416x416, CPU):
+------------------------------------------------------------
+Model           Mean (ms)          FPS     Relative
+------------------------------------------------------------
+YOLOv3-tiny         XX.XX        XX.XX        1.00x
+YOLOv4-tiny         XX.XX        XX.XX        X.XXx
+YOLOv8n             XX.XX        XX.XX        X.XXx
+------------------------------------------------------------
+```
+
+## Model Comparison
+
+| Model | Parameters | Format | Input Size |
+|-------|------------|--------|------------|
+| YOLOv3-tiny | ~8.7M | .cfg + .weights | 416x416 |
+| YOLOv4-tiny | ~6M | .cfg + .weights | 416x416 |
+| YOLOv8n | ~3.2M | .onnx | 416x416 |
+
+## Deployment to Jetson Nano
+
+For Jetson Nano deployment using Rust:
+
+1. Cross-compile the benchmark or build on device
+2. Use `--cuda` flag for GPU acceleration
+3. OpenCV must be compiled with CUDA support
+
+Example with od_opencv in your Rust project:
+
+```rust
+use od_opencv::model_classic::ModelYOLOClassic;
+use opencv::dnn::{DNN_BACKEND_CUDA, DNN_TARGET_CUDA};
+
+let model = ModelYOLOClassic::new_from_darknet_file(
+    "weights/yolov4-tiny-vehicles.weights",
+    "configs/yolov4-tiny-vehicles.cfg",
+    (416, 416),
+    DNN_BACKEND_CUDA,
+    DNN_TARGET_CUDA,
+    vec![],
+)?;
+```
+
+## Legacy Files
+
+Old configuration files are kept for reference:
+- `vehicles.cfg` - Original YOLOv3-tiny at 352x256
+- `vehicles_v4.cfg` - Original YOLOv4-tiny at 384x384
+
+## License
+
+MIT

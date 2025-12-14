@@ -1,0 +1,14 @@
+[package]
+name = "vehicles-benchmark"
+version = "0.1.0"
+edition = "2024"
+description = "Benchmark YOLOv3-tiny, YOLOv4-tiny, YOLOv8n for vehicles detection"
+
+[dependencies]
+od_opencv = "0.2"
+opencv = { version = "0.96", features = ["dnn", "imgcodecs", "imgproc"] }
+clap = { version = "4", features = ["derive"] }
+
+[[bin]]
+name = "benchmark"
+path = "src/main.rs"
