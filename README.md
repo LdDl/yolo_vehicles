@@ -91,10 +91,47 @@ Also set ARCH for your GPU (e.g., RTX 3060 = Ampere, compute 8.6):
 ARCH= -gencode arch=compute_86,code=[sm_86,compute_86]
 ```
 
+<details>
+<summary><strong>CUDA 13+ compatibility fix</strong></summary>
+
+If you get `cudaHostAlloc` incompatible pointer type errors, you need to add `(void**)` casts in these files:
+
+**src/network.c** (line ~660):
+```c
+if (cudaSuccess == cudaHostAlloc((void**)&net->input_pinned_cpu, size * sizeof(float), cudaHostRegisterMapped))
+```
+
+**src/parser.c** (line ~1761):
+```c
+if (cudaSuccess == cudaHostAlloc((void**)&net.input_pinned_cpu, size * sizeof(float), cudaHostRegisterMapped))
+```
+
+**src/yolo_layer.c** (lines ~67, 74, 105, 114):
+```c
+if (cudaSuccess == cudaHostAlloc((void**)&l.output, ...))
+if (cudaSuccess == cudaHostAlloc((void**)&l.delta, ...))
+if (cudaSuccess != cudaHostAlloc((void**)&l->output, ...))
+if (cudaSuccess != cudaHostAlloc((void**)&l->delta, ...))
+```
+
+**src/gaussian_yolo_layer.c** (lines ~70, 77, 109, 118):
+```c
+// Same pattern as yolo_layer.c - add (void**) cast to all cudaHostAlloc calls
+```
+
+</details>
+
 Build Darknet:
 ```bash
 cd darknet
 make clean && make -j$(nproc)
+```
+
+Install system-wide (optional):
+```bash
+sudo cp darknet /usr/local/bin/
+sudo cp libdarknet.so /usr/local/lib/
+sudo ldconfig
 ```
 
 Train:
