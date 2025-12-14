@@ -8,7 +8,8 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 const CLASSES: [&str; 4] = ["car", "motorbike", "bus", "truck"];
-const NET_SIZE: i32 = 416;
+const NET_WIDTH: i32 = 416;
+const NET_HEIGHT: i32 = 256;
 const CONF_THRESHOLD: f32 = 0.25;
 const NMS_THRESHOLD: f32 = 0.45;
 
@@ -140,7 +141,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Configuration:");
     println!("  Image: {:?}", args.image);
     println!("  Backend: {}", backend_name);
-    println!("  Input size: {}x{}", NET_SIZE, NET_SIZE);
+    println!("  Input size: {}x{}", NET_WIDTH, NET_HEIGHT);
     println!("  Iterations: {}", args.iterations);
     println!("  Warmup: {}", args.warmup);
     println!("  Confidence threshold: {}", CONF_THRESHOLD);
@@ -163,7 +164,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut model = ModelYOLOClassic::new_from_darknet_file(
             weights.to_str().unwrap(),
             cfg.to_str().unwrap(),
-            (NET_SIZE, NET_SIZE),
+            (NET_WIDTH, NET_HEIGHT),
             backend,
             target,
             vec![],
@@ -185,7 +186,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut model = ModelYOLOClassic::new_from_darknet_file(
             weights.to_str().unwrap(),
             cfg.to_str().unwrap(),
-            (NET_SIZE, NET_SIZE),
+            (NET_WIDTH, NET_HEIGHT),
             backend,
             target,
             vec![],
@@ -206,7 +207,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let mut model = ModelUltralyticsV8::new_from_onnx_file(
             onnx.to_str().unwrap(),
-            (NET_SIZE, NET_SIZE),
+            (NET_WIDTH, NET_HEIGHT),
             backend,
             target,
             vec![],
@@ -232,7 +233,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Comparison table
     if results.len() > 1 {
-        println!("\n\nComparison ({}x{}, {}):", NET_SIZE, NET_SIZE, backend_name);
+        println!("\n\nComparison ({}x{}, {}):", NET_WIDTH, NET_HEIGHT, backend_name);
         println!("{:-<60}", "");
         println!(
             "{:<15} {:>12} {:>12} {:>12}",

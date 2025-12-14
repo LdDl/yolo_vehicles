@@ -2,7 +2,7 @@
 
 Training and benchmarking YOLOv3-tiny, YOLOv4-tiny, and YOLOv8n for vehicle detection.
 
-All models are configured for **416x416** input size for fair performance comparison.
+All models are configured for **416x256** input size (16:9 aspect ratio) for fair performance comparison and optimized for edge devices like Jetson Nano.
 
 ## Classes
 
@@ -18,8 +18,8 @@ All models are configured for **416x416** input size for fair performance compar
 ```
 vehicles_yolo/
 ├── configs/
-│   ├── yolov3-tiny-vehicles.cfg    # Darknet config (416x416, 4 classes)
-│   ├── yolov4-tiny-vehicles.cfg    # Darknet config (416x416, 4 classes)
+│   ├── yolov3-tiny-vehicles.cfg    # Darknet config (416x256, 4 classes)
+│   ├── yolov4-tiny-vehicles.cfg    # Darknet config (416x256, 4 classes)
 │   └── yolov8n-vehicles.yaml       # Ultralytics config (4 classes)
 ├── data/
 │   ├── vehicles.names              # Class names
@@ -146,7 +146,7 @@ Train:
 #### YOLOv8n (Ultralytics)
 
 ```bash
-python scripts/train_ultralytics.py --epochs 100 --imgsz 416
+python scripts/train_ultralytics.py --epochs 100
 ```
 
 Options:
@@ -190,7 +190,7 @@ Options:
 ║                    BENCHMARK SUMMARY                    ║
 ╚════════════════════════════════════════════════════════╝
 
-Comparison (416x416, CPU):
+Comparison (416x256, CPU):
 ------------------------------------------------------------
 Model           Mean (ms)          FPS     Relative
 ------------------------------------------------------------
@@ -204,9 +204,9 @@ YOLOv8n             XX.XX        XX.XX        X.XXx
 
 | Model | Parameters | Format | Input Size |
 |-------|------------|--------|------------|
-| YOLOv3-tiny | ~8.7M | .cfg + .weights | 416x416 |
-| YOLOv4-tiny | ~6M | .cfg + .weights | 416x416 |
-| YOLOv8n | ~3.2M | .onnx | 416x416 |
+| YOLOv3-tiny | ~8.7M | .cfg + .weights | 416x256 |
+| YOLOv4-tiny | ~6M | .cfg + .weights | 416x256 |
+| YOLOv8n | ~3.2M | .onnx | 416x256 |
 
 ## Deployment to Jetson Nano
 
@@ -225,7 +225,7 @@ use opencv::dnn::{DNN_BACKEND_CUDA, DNN_TARGET_CUDA};
 let model = ModelYOLOClassic::new_from_darknet_file(
     "weights/yolov4-tiny-vehicles.weights",
     "configs/yolov4-tiny-vehicles.cfg",
-    (416, 416),
+    (416, 256),
     DNN_BACKEND_CUDA,
     DNN_TARGET_CUDA,
     vec![],

@@ -11,7 +11,9 @@ trained_weights/
 !chart_vehicles.png
 *.weights
 *.cfg
+!configs/*.cfg
 *.data
+!data/*.data
 *.bak
 *.list
 *.darknet
