@@ -73,6 +73,13 @@ If your dataset already has the correct structure (`images/train`, `images/val`,
 ./scripts/generate_file_lists.sh
 ```
 
+**Note:** Darknet expects label files in the same directory as images. Copy them if needed:
+
+```bash
+cp aic_hcmc2020/labels/train/*.txt aic_hcmc2020/images/train/
+cp aic_hcmc2020/labels/val/*.txt aic_hcmc2020/images/val/
+```
+
 ### 4. Train Models
 
 #### YOLOv3-tiny / YOLOv4-tiny (Darknet)
