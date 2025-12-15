@@ -4,6 +4,8 @@ Training and benchmarking YOLOv3-tiny, YOLOv4-tiny, and YOLOv8n for vehicle dete
 
 All models are configured for **416x256** input size (16:9 aspect ratio) for fair performance comparison and optimized for edge devices like Jetson Nano.
 
+> **Note on YOLOv8 training**: Ultralytics requires square images during training (`imgsz=416`), but YOLO models are fully convolutional and can be exported to any size. I've export it to 416x256 anyways for inference. The model works directly with rectangular input - no resizing to square required during inference (I believe so).
+
 ## Classes
 
 | ID | Class |
