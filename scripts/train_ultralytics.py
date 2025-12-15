@@ -19,7 +19,7 @@ def main():
     parser = argparse.ArgumentParser(description='Train YOLOv8n for vehicles detection')
     parser.add_argument('--epochs', type=int, default=100, help='Number of epochs')
     parser.add_argument('--batch', type=int, default=16, help='Batch size')
-    parser.add_argument('--imgsz', type=int, nargs='+', default=[416, 256], help='Image size [width, height]')
+    parser.add_argument('--imgsz', type=int, default=416, help='Image size (single int for training)')
     parser.add_argument('--device', type=str, default='0', help='CUDA device (0, 1, cpu)')
     parser.add_argument('--workers', type=int, default=8, help='Number of dataloader workers')
     parser.add_argument('--resume', type=str, default=None, help='Resume from checkpoint')
@@ -84,7 +84,7 @@ def main():
         export_model = YOLO(str(best_weights))
         export_model.export(
             format='onnx',
-            imgsz=args.imgsz,
+            imgsz=[416, 256],  # 16:9 aspect ratio for deployment
             opset=12,
             simplify=True,
         )
