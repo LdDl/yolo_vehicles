@@ -17,3 +17,4 @@ trained_weights/
 *.bak
 *.list
 *.darknet
+venv/
