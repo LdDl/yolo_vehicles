@@ -2,7 +2,7 @@
 # Used for training YOLOv8n
 
 # Dataset paths (relative to this file or absolute)
-path: ../aic_hcmc2020  # dataset root dir
+path: ./aic_hcmc2020  # dataset root dir (relative to project root)
 train: images/train    # train images (relative to 'path')
 val: images/val        # val images (relative to 'path')
 
