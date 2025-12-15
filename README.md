@@ -52,7 +52,11 @@ tar -xzf aic_hcmc2020.tar.gz
 ### 2. Install Dependencies
 
 ```bash
-# Python dependencies (for YOLOv8 and dataset preparation)
+# Create and activate virtual environment
+python -m venv venv
+source venv/bin/activate
+
+# Install Python dependencies (for YOLOv8)
 pip install -r requirements.txt
 ```
 
