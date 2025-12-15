@@ -4,7 +4,9 @@ Training and benchmarking YOLOv3-tiny, YOLOv4-tiny, and YOLOv8n for vehicle dete
 
 All models are configured for **416x256** input size (16:9 aspect ratio) for fair performance comparison and optimized for edge devices like Jetson Nano.
 
-> **Note on YOLOv8 training**: Ultralytics requires square images during training (`imgsz=416`), but YOLO models are fully convolutional and can be exported to any size. I've export it to 416x256 anyways for inference. The model works directly with rectangular input - no resizing to square required during inference (I believe so).
+> **Note on YOLOv8 training**: Ultralytics `imgsz` only accepts a single integer during training (e.g., `imgsz=416`). Use `rect=True` to enable rectangular batching that adapts to each batch's aspect ratio. See [ultralytics#235](https://github.com/ultralytics/ultralytics/issues/235).
+>
+> **Note on YOLOv8 export**: For export, `imgsz` accepts `[height, width]`. Ultralytics uses height-first order, while Darknet uses width-first. To export a 416x256 (width x height) ONNX matching Darknet configs, use `imgsz=256,416`.
 
 ## Classes
 
@@ -273,27 +275,14 @@ Options:
 ### Example Output
 
 ```
-+----------------------------------------------------------+
-|                    BENCHMARK SUMMARY                     |
-+----------------------------------------------------------+
-
-==================================================
-Model: YOLOv3-tiny
-==================================================
-Iterations: 4021
-Total time: 19.27s
-Mean time:  4.79ms
-Min time:   2.12ms
-Max time:   441.03ms
-FPS:        208.70
-
-mAP@0.50:   70.13%
-
-Per-class AP@0.50:
-  car: 76.80%
-  motorbike: 68.20%
-  bus: 66.34%
-  truck: 69.18%
+Comparison (416x256, CUDA):
+---------------------------------------------------------------------------
+Model              Mean (ms)          FPS     mAP@0.50 Relative FPS
+---------------------------------------------------------------------------
+YOLOv3-tiny             4.86       205.76       70.08%        1.00x
+YOLOv4-tiny             5.00       199.91       71.87%        0.97x
+YOLOv8n                 8.41       118.89       64.03%        0.58x
+---------------------------------------------------------------------------
 ```
 
 ## Benchmark Results
@@ -302,20 +291,20 @@ Per-class AP@0.50:
 
 | Model | Backend | Mean (ms) | Min (ms) | FPS |
 |-------|---------|-----------|----------|-----|
-| YOLOv3-tiny | CPU | 16.60 | 12.17 | 60.24 |
-| YOLOv3-tiny | CUDA (RTX 3060) | 4.79 | 2.12 | 208.70 |
-| YOLOv4-tiny | CPU | - | - | - |
-| YOLOv4-tiny | CUDA (RTX 3060) | - | - | - |
-| YOLOv8n | CPU | - | - | - |
-| YOLOv8n | CUDA (RTX 3060) | - | - | - |
+| YOLOv3-tiny | CPU | 23.66 | 19.34 | 42.26 |
+| YOLOv4-tiny | CPU | 24.52 | 19.68 | 40.79 |
+| YOLOv8n | CPU | 24.46 | 20.94 | 40.88 |
+| YOLOv3-tiny | CUDA (RTX 3060) | 4.86 | 2.45 | 205.76 |
+| YOLOv4-tiny | CUDA (RTX 3060) | 5.00 | 2.58 | 199.91 |
+| YOLOv8n | CUDA (RTX 3060) | 8.41 | 5.95 | 118.89 |
 
 ### mAP Comparison (416x256, IoU=0.50)
 
 | Model | mAP@0.50 | car | motorbike | bus | truck |
 |-------|----------|-----|-----------|-----|-------|
-| YOLOv3-tiny | 70.13% | 76.80% | 68.20% | 66.34% | 69.18% |
-| YOLOv4-tiny | - | - | - | - | - |
-| YOLOv8n | - | - | - | - | - |
+| YOLOv4-tiny | **71.87%** | 78.90% | 53.48% | 76.69% | 78.42% |
+| YOLOv3-tiny | 70.08% | 77.49% | 69.08% | 65.04% | 68.71% |
+| YOLOv8n | 64.03% | 69.65% | 69.01% | 50.75% | 66.72% |
 
 > **Note:** mAP calculated using Pascal VOC 11-point interpolation. Darknet reports higher values (~80%) using all-point interpolation (COCO style).
 

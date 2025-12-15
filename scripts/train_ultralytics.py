@@ -61,6 +61,7 @@ def main():
         model = YOLO(str(model_yaml))
 
     # Train
+    # rect=True enables rectangular batching (adapts to each batch's aspect ratio)
     results = model.train(
         data=str(data_yaml),
         epochs=args.epochs,
@@ -73,6 +74,7 @@ def main():
         exist_ok=True,
         pretrained=args.pretrained,
         verbose=True,
+        rect=True,
     )
 
     # Export to ONNX for deployment
@@ -82,9 +84,10 @@ def main():
 
     if best_weights.exists():
         export_model = YOLO(str(best_weights))
+        # imgsz=[height, width] in Ultralytics - use [256, 416] for 416x256 (width x height)
         export_model.export(
             format='onnx',
-            imgsz=[416, 256],  # 16:9 aspect ratio for deployment
+            imgsz=[256, 416],  # height=256, width=416 to match Darknet 416x256
             opset=12,
             simplify=True,
         )

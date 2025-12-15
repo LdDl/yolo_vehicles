@@ -18,3 +18,4 @@ trained_weights/
 *.list
 *.darknet
 venv/
+weights/
