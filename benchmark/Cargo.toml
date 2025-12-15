@@ -1,12 +1,12 @@
 [package]
 name = "vehicles-benchmark"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 description = "Benchmark YOLOv3-tiny, YOLOv4-tiny, YOLOv8n for vehicles detection"
 
 [dependencies]
-od_opencv = "0.2"
-opencv = { version = "0.96", features = ["dnn", "imgcodecs", "imgproc"] }
+od_opencv = "=0.1.6"
+opencv = "=0.91.3"
 clap = { version = "4", features = ["derive"] }
 
 [[bin]]

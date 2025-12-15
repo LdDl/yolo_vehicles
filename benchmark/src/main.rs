@@ -1,26 +1,36 @@
+mod benchmark;
+mod metrics;
+mod models;
+mod types;
+
 use clap::Parser;
 use od_opencv::{model_classic::ModelYOLOClassic, model_ultralytics::ModelUltralyticsV8};
 use opencv::{
     dnn::{DNN_BACKEND_CUDA, DNN_BACKEND_OPENCV, DNN_TARGET_CPU, DNN_TARGET_CUDA},
     imgcodecs::imread,
+    prelude::*,
 };
 use std::path::PathBuf;
-use std::time::{Duration, Instant};
 
-const CLASSES: [&str; 4] = ["car", "motorbike", "bus", "truck"];
-const NET_WIDTH: i32 = 416;
-const NET_HEIGHT: i32 = 256;
-const CONF_THRESHOLD: f32 = 0.25;
-const NMS_THRESHOLD: f32 = 0.45;
+use benchmark::{benchmark_speed, run_map_evaluation};
+use types::{BenchmarkResult, CONF_THRESHOLD, NET_HEIGHT, NET_WIDTH, NMS_THRESHOLD, IOU_THRESHOLD};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
-    /// Path to test image
+    /// Path to test image (for speed benchmark)
     #[arg(short, long)]
-    image: PathBuf,
+    image: Option<PathBuf>,
 
-    /// Number of inference iterations for benchmarking
+    /// Path to validation images directory (for mAP calculation)
+    #[arg(long)]
+    val_images: Option<PathBuf>,
+
+    /// Path to validation labels directory (for mAP calculation)
+    #[arg(long)]
+    val_labels: Option<PathBuf>,
+
+    /// Number of inference iterations for speed benchmarking
     #[arg(short, long, default_value_t = 100)]
     iterations: u32,
 
@@ -51,77 +61,10 @@ struct Args {
     /// Warmup iterations before benchmarking
     #[arg(long, default_value_t = 10)]
     warmup: u32,
-}
 
-struct BenchmarkResult {
-    model_name: String,
-    iterations: u32,
-    total_time: Duration,
-    mean_time: Duration,
-    min_time: Duration,
-    max_time: Duration,
-    fps: f64,
-}
-
-impl BenchmarkResult {
-    fn print(&self) {
-        println!("\n{}", "=".repeat(50));
-        println!("Model: {}", self.model_name);
-        println!("{}", "=".repeat(50));
-        println!("Iterations: {}", self.iterations);
-        println!("Total time: {:.2?}", self.total_time);
-        println!("Mean time:  {:.2?}", self.mean_time);
-        println!("Min time:   {:.2?}", self.min_time);
-        println!("Max time:   {:.2?}", self.max_time);
-        println!("FPS:        {:.2}", self.fps);
-    }
-}
-
-fn benchmark_model<F>(
-    model_name: &str,
-    iterations: u32,
-    warmup: u32,
-    mut inference_fn: F,
-) -> BenchmarkResult
-where
-    F: FnMut() -> Result<(), opencv::Error>,
-{
-    // Warmup
-    println!("  Warming up ({} iterations)...", warmup);
-    for _ in 0..warmup {
-        inference_fn().expect("Warmup inference failed");
-    }
-
-    // Benchmark
-    println!("  Benchmarking ({} iterations)...", iterations);
-    let mut times = Vec::with_capacity(iterations as usize);
-
-    for i in 0..iterations {
-        let start = Instant::now();
-        inference_fn().expect("Benchmark inference failed");
-        let elapsed = start.elapsed();
-        times.push(elapsed);
-
-        if (i + 1) % 20 == 0 {
-            println!("    Progress: {}/{}", i + 1, iterations);
-        }
-    }
-
-    let total_time: Duration = times.iter().sum();
-    let mean_time = total_time / iterations;
-    let min_time = *times.iter().min().unwrap();
-    let max_time = *times.iter().max().unwrap();
-    let fps = iterations as f64 / total_time.as_secs_f64();
-
-    BenchmarkResult {
-        model_name: model_name.to_string(),
-        iterations,
-        total_time,
-        mean_time,
-        min_time,
-        max_time,
-        fps,
-    }
+    /// Maximum images to process for mAP (0 = all)
+    #[arg(long, default_value_t = 0)]
+    max_images: usize,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -134,138 +77,283 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         (DNN_BACKEND_OPENCV, DNN_TARGET_CPU, "CPU")
     };
 
-    println!("╔════════════════════════════════════════════════════════╗");
-    println!("║        YOLO Vehicles Detection Benchmark               ║");
-    println!("╚════════════════════════════════════════════════════════╝");
-    println!();
-    println!("Configuration:");
-    println!("  Image: {:?}", args.image);
-    println!("  Backend: {}", backend_name);
-    println!("  Input size: {}x{}", NET_WIDTH, NET_HEIGHT);
-    println!("  Iterations: {}", args.iterations);
-    println!("  Warmup: {}", args.warmup);
-    println!("  Confidence threshold: {}", CONF_THRESHOLD);
-    println!("  NMS threshold: {}", NMS_THRESHOLD);
+    print_header();
+    print_config(&args, backend_name);
 
-    // Load test image
-    let image = imread(args.image.to_str().unwrap(), 1)?;
-    if image.empty() {
-        return Err("Failed to load image".into());
-    }
-    println!("  Image loaded: {}x{}", image.cols(), image.rows());
+    // Load test image for speed benchmark
+    let speed_image = load_speed_image(&args)?;
 
     let mut results: Vec<BenchmarkResult> = Vec::new();
 
     // Benchmark YOLOv3-tiny
     if let (Some(weights), Some(cfg)) = (&args.v3_weights, &args.v3_cfg) {
-        println!("\n[YOLOv3-tiny]");
-        println!("  Loading model...");
-
-        let mut model = ModelYOLOClassic::new_from_darknet_file(
-            weights.to_str().unwrap(),
-            cfg.to_str().unwrap(),
-            (NET_WIDTH, NET_HEIGHT),
+        let result = benchmark_darknet_model(
+            "YOLOv3-tiny",
+            weights,
+            cfg,
+            &args,
+            &speed_image,
             backend,
             target,
-            vec![],
         )?;
-
-        let image_clone = image.clone();
-        let result = benchmark_model("YOLOv3-tiny", args.iterations, args.warmup, || {
-            model.forward(&image_clone, CONF_THRESHOLD, NMS_THRESHOLD)?;
-            Ok(())
-        });
         results.push(result);
     }
 
     // Benchmark YOLOv4-tiny
     if let (Some(weights), Some(cfg)) = (&args.v4_weights, &args.v4_cfg) {
-        println!("\n[YOLOv4-tiny]");
-        println!("  Loading model...");
-
-        let mut model = ModelYOLOClassic::new_from_darknet_file(
-            weights.to_str().unwrap(),
-            cfg.to_str().unwrap(),
-            (NET_WIDTH, NET_HEIGHT),
+        let result = benchmark_darknet_model(
+            "YOLOv4-tiny",
+            weights,
+            cfg,
+            &args,
+            &speed_image,
             backend,
             target,
-            vec![],
         )?;
-
-        let image_clone = image.clone();
-        let result = benchmark_model("YOLOv4-tiny", args.iterations, args.warmup, || {
-            model.forward(&image_clone, CONF_THRESHOLD, NMS_THRESHOLD)?;
-            Ok(())
-        });
         results.push(result);
     }
 
     // Benchmark YOLOv8n
     if let Some(onnx) = &args.v8_onnx {
-        println!("\n[YOLOv8n]");
-        println!("  Loading model...");
-
-        let mut model = ModelUltralyticsV8::new_from_onnx_file(
-            onnx.to_str().unwrap(),
-            (NET_WIDTH, NET_HEIGHT),
-            backend,
-            target,
-            vec![],
-        )?;
-
-        let image_clone = image.clone();
-        let result = benchmark_model("YOLOv8n", args.iterations, args.warmup, || {
-            model.forward(&image_clone, CONF_THRESHOLD, NMS_THRESHOLD)?;
-            Ok(())
-        });
+        let result = benchmark_onnx_model("YOLOv8n", onnx, &args, &speed_image, backend, target)?;
         results.push(result);
     }
 
-    // Print summary
-    println!("\n");
-    println!("╔════════════════════════════════════════════════════════╗");
-    println!("║                    BENCHMARK SUMMARY                    ║");
-    println!("╚════════════════════════════════════════════════════════╝");
+    // Print results
+    print_summary(&results, backend_name);
 
-    for result in &results {
+    if results.is_empty() {
+        print_usage();
+    }
+
+    Ok(())
+}
+
+fn print_header() {
+    println!("+----------------------------------------------------------+");
+    println!("|        YOLO Vehicles Detection Benchmark                 |");
+    println!("+----------------------------------------------------------+");
+    println!();
+}
+
+fn print_config(args: &Args, backend_name: &str) {
+    println!("Configuration:");
+    println!("  Backend: {}", backend_name);
+    println!("  Input size: {}x{}", NET_WIDTH, NET_HEIGHT);
+    println!("  Confidence threshold: {}", CONF_THRESHOLD);
+    println!("  NMS threshold: {}", NMS_THRESHOLD);
+    println!("  IoU threshold (mAP): {}", IOU_THRESHOLD);
+
+    if let Some(ref img) = args.image {
+        println!("  Speed test image: {:?}", img);
+        println!("  Iterations: {}", args.iterations);
+        println!("  Warmup: {}", args.warmup);
+    }
+
+    if let (Some(ref val_img), Some(ref val_lbl)) = (&args.val_images, &args.val_labels) {
+        println!("  Validation images: {:?}", val_img);
+        println!("  Validation labels: {:?}", val_lbl);
+        if args.max_images > 0 {
+            println!("  Max images for mAP: {}", args.max_images);
+        }
+    }
+}
+
+fn load_speed_image(args: &Args) -> Result<Option<opencv::core::Mat>, Box<dyn std::error::Error>> {
+    if let Some(ref img_path) = args.image {
+        let image = imread(img_path.to_str().unwrap(), 1)?;
+        if image.empty() {
+            return Err("Failed to load speed test image".into());
+        }
+        println!("  Speed test image loaded: {}x{}", image.cols(), image.rows());
+        Ok(Some(image))
+    } else {
+        Ok(None)
+    }
+}
+
+fn benchmark_darknet_model(
+    model_name: &str,
+    weights: &PathBuf,
+    cfg: &PathBuf,
+    args: &Args,
+    speed_image: &Option<opencv::core::Mat>,
+    backend: i32,
+    target: i32,
+) -> Result<BenchmarkResult, Box<dyn std::error::Error>> {
+    println!("\n[{}]", model_name);
+    println!("  Loading model...");
+
+    let mut model = ModelYOLOClassic::new_from_darknet_file(
+        weights.to_str().unwrap(),
+        cfg.to_str().unwrap(),
+        (NET_WIDTH, NET_HEIGHT),
+        backend,
+        target,
+        vec![],
+    )?;
+
+    let mut result = BenchmarkResult::new(model_name, args.iterations);
+
+    // Speed benchmark
+    if let Some(ref image) = speed_image {
+        let image_clone = image.clone();
+        let (total, min, max) = benchmark_speed(model_name, args.iterations, args.warmup, || {
+            model.forward(&image_clone, CONF_THRESHOLD, NMS_THRESHOLD)?;
+            Ok(())
+        });
+        result.total_time = total;
+        result.min_time = min;
+        result.max_time = max;
+        result.mean_time = total / args.iterations;
+        result.fps = args.iterations as f64 / total.as_secs_f64();
+    }
+
+    // mAP evaluation
+    if let (Some(ref val_img), Some(ref val_lbl)) = (&args.val_images, &args.val_labels) {
+        let map_result = run_map_evaluation(&mut model, val_img, val_lbl, args.max_images)?;
+        result.map50 = Some(map_result.map);
+        result.per_class_ap = Some(map_result.per_class_ap);
+
+        // Use mAP timing if no speed benchmark was run
+        if speed_image.is_none() {
+            result.iterations = map_result.num_images as u32;
+            result.total_time = map_result.total_inference_time;
+            result.mean_time = map_result.mean_inference_time;
+            result.min_time = map_result.min_inference_time;
+            result.max_time = map_result.max_inference_time;
+            if map_result.total_inference_time.as_secs_f64() > 0.0 {
+                result.fps = map_result.num_images as f64 / map_result.total_inference_time.as_secs_f64();
+            }
+        }
+    }
+
+    Ok(result)
+}
+
+fn benchmark_onnx_model(
+    model_name: &str,
+    onnx: &PathBuf,
+    args: &Args,
+    speed_image: &Option<opencv::core::Mat>,
+    backend: i32,
+    target: i32,
+) -> Result<BenchmarkResult, Box<dyn std::error::Error>> {
+    println!("\n[{}]", model_name);
+    println!("  Loading model...");
+
+    let mut model = ModelUltralyticsV8::new_from_onnx_file(
+        onnx.to_str().unwrap(),
+        (NET_WIDTH, NET_HEIGHT),
+        backend,
+        target,
+        vec![],
+    )?;
+
+    let mut result = BenchmarkResult::new(model_name, args.iterations);
+
+    // Speed benchmark
+    if let Some(ref image) = speed_image {
+        let image_clone = image.clone();
+        let (total, min, max) = benchmark_speed(model_name, args.iterations, args.warmup, || {
+            model.forward(&image_clone, CONF_THRESHOLD, NMS_THRESHOLD)?;
+            Ok(())
+        });
+        result.total_time = total;
+        result.min_time = min;
+        result.max_time = max;
+        result.mean_time = total / args.iterations;
+        result.fps = args.iterations as f64 / total.as_secs_f64();
+    }
+
+    // mAP evaluation
+    if let (Some(ref val_img), Some(ref val_lbl)) = (&args.val_images, &args.val_labels) {
+        let map_result = run_map_evaluation(&mut model, val_img, val_lbl, args.max_images)?;
+        result.map50 = Some(map_result.map);
+        result.per_class_ap = Some(map_result.per_class_ap);
+
+        // Use mAP timing if no speed benchmark was run
+        if speed_image.is_none() {
+            result.iterations = map_result.num_images as u32;
+            result.total_time = map_result.total_inference_time;
+            result.mean_time = map_result.mean_inference_time;
+            result.min_time = map_result.min_inference_time;
+            result.max_time = map_result.max_inference_time;
+            if map_result.total_inference_time.as_secs_f64() > 0.0 {
+                result.fps = map_result.num_images as f64 / map_result.total_inference_time.as_secs_f64();
+            }
+        }
+    }
+
+    Ok(result)
+}
+
+fn print_summary(results: &[BenchmarkResult], backend_name: &str) {
+    println!("\n");
+    println!("+----------------------------------------------------------+");
+    println!("|                    BENCHMARK SUMMARY                     |");
+    println!("+----------------------------------------------------------+");
+
+    for result in results {
         result.print();
     }
 
     // Comparison table
     if results.len() > 1 {
         println!("\n\nComparison ({}x{}, {}):", NET_WIDTH, NET_HEIGHT, backend_name);
-        println!("{:-<60}", "");
+        println!("{:-<75}", "");
         println!(
-            "{:<15} {:>12} {:>12} {:>12}",
-            "Model", "Mean (ms)", "FPS", "Relative"
+            "{:<15} {:>12} {:>12} {:>12} {:>12}",
+            "Model", "Mean (ms)", "FPS", "mAP@0.50", "Relative FPS"
         );
-        println!("{:-<60}", "");
+        println!("{:-<75}", "");
 
         let baseline_fps = results[0].fps;
-        for result in &results {
-            let relative = result.fps / baseline_fps;
+        for result in results {
+            let relative = if baseline_fps > 0.0 {
+                result.fps / baseline_fps
+            } else {
+                0.0
+            };
+            let map_str = result
+                .map50
+                .map(|m| format!("{:.2}%", m * 100.0))
+                .unwrap_or_else(|| "-".to_string());
+
             println!(
-                "{:<15} {:>12.2} {:>12.2} {:>11.2}x",
+                "{:<15} {:>12.2} {:>12.2} {:>12} {:>11.2}x",
                 result.model_name,
                 result.mean_time.as_secs_f64() * 1000.0,
                 result.fps,
+                map_str,
                 relative
             );
         }
-        println!("{:-<60}", "");
+        println!("{:-<75}", "");
     }
+}
 
-    if results.is_empty() {
-        println!("\nNo models were benchmarked. Please provide model paths.");
-        println!("Example:");
-        println!("  cargo run --release -- \\");
-        println!("    --image ../images_samples/1.jpg \\");
-        println!("    --v3-weights ../weights/yolov3-tiny-vehicles.weights \\");
-        println!("    --v3-cfg ../configs/yolov3-tiny-vehicles.cfg \\");
-        println!("    --v4-weights ../weights/yolov4-tiny-vehicles.weights \\");
-        println!("    --v4-cfg ../configs/yolov4-tiny-vehicles.cfg \\");
-        println!("    --v8-onnx ../weights/yolov8n-vehicles.onnx");
-    }
-
-    Ok(())
+fn print_usage() {
+    println!("\nNo models were benchmarked. Please provide model paths.");
+    println!("\nSpeed benchmark example:");
+    println!("  cargo run --release -- \\");
+    println!("    --image ../aic_hcmc2020/images/val/cam_01_000001.jpg \\");
+    println!("    --v3-weights ../weights/yolov3-tiny-vehicles_best.weights \\");
+    println!("    --v3-cfg ../configs/yolov3-tiny-vehicles-infer.cfg");
+    println!("\nmAP evaluation example:");
+    println!("  cargo run --release -- \\");
+    println!("    --val-images ../aic_hcmc2020/images/val \\");
+    println!("    --val-labels ../aic_hcmc2020/labels/val \\");
+    println!("    --v3-weights ../weights/yolov3-tiny-vehicles_best.weights \\");
+    println!("    --v3-cfg ../configs/yolov3-tiny-vehicles-infer.cfg");
+    println!("\nFull benchmark (speed + mAP) example:");
+    println!("  cargo run --release -- \\");
+    println!("    --image ../aic_hcmc2020/images/val/cam_01_000001.jpg \\");
+    println!("    --val-images ../aic_hcmc2020/images/val \\");
+    println!("    --val-labels ../aic_hcmc2020/labels/val \\");
+    println!("    --v3-weights ../weights/yolov3-tiny-vehicles_best.weights \\");
+    println!("    --v3-cfg ../configs/yolov3-tiny-vehicles-infer.cfg \\");
+    println!("    --v4-weights ../weights/yolov4-tiny-vehicles_best.weights \\");
+    println!("    --v4-cfg ../configs/yolov4-tiny-vehicles-infer.cfg \\");
+    println!("    --v8-onnx ../weights/yolov8n-vehicles/weights/best.onnx");
 }
