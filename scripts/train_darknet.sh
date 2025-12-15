@@ -80,7 +80,7 @@ echo ""
 # Add -gpus 0,1 for multi-GPU training
 
 cd "$PROJECT_DIR"
-darknet detector train "$DATA_FILE" "$CFG_FILE" -map
+darknet detector train "$DATA_FILE" "$CFG_FILE" -map -dont_show
 
 echo ""
 echo "Training complete!"
