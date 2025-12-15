@@ -34,7 +34,12 @@ vehicles_yolo/
 │   └── train_ultralytics.py        # Train v8n
 ├── benchmark/                      # Rust benchmark (uses od_opencv crate)
 │   ├── Cargo.toml
-│   └── src/main.rs
+│   └── src/
+│       ├── main.rs                 # CLI and orchestration
+│       ├── benchmark.rs            # Speed and mAP evaluation
+│       ├── metrics.rs              # IoU, AP, mAP calculation
+│       ├── models.rs               # YoloModel trait
+│       └── types.rs                # Constants and structs
 ├── weights/                        # Trained weights output
 ├── requirements.txt
 └── README.md
@@ -174,9 +179,38 @@ Options:
 - `--batch 16` - Adjust batch size for your GPU
 - `--device 0` - CUDA device ID
 
+## Inference (Testing Detection)
+
+### YOLOv3-tiny / YOLOv4-tiny (Darknet)
+
+```bash
+darknet detector test data/vehicles.data \
+    configs/yolov3-tiny-vehicles-infer.cfg \
+    weights/yolov3-tiny-vehicles_best.weights \
+    path/to/image.jpg
+```
+
+Save output to file instead of displaying:
+
+```bash
+darknet detector test data/vehicles.data \
+    configs/yolov3-tiny-vehicles-infer.cfg \
+    weights/yolov3-tiny-vehicles_best.weights \
+    path/to/image.jpg \
+    -dont_show -out_filename predictions.jpg
+```
+
+### YOLOv8n (Ultralytics)
+
+```bash
+yolo detect predict model=weights/yolov8n-vehicles/weights/best.pt source=path/to/image.jpg
+```
+
+Results are saved to `runs/detect/predict/` by default.
+
 ## Benchmarking
 
-The benchmark uses [od_opencv](https://crates.io/crates/od_opencv) Rust crate for realistic deployment performance on edge devices like Jetson Nano.
+The benchmark uses [od_opencv](https://crates.io/crates/od_opencv) Rust crate for realistic deployment performance on edge devices like Jetson Nano. It measures both **FPS** and **mAP@0.50** using Pascal VOC 11-point interpolation.
 
 ### Build Benchmark
 
@@ -187,38 +221,103 @@ cargo build --release
 
 ### Run Benchmark
 
+**Speed + mAP evaluation (recommended):**
 ```bash
-cargo run --release -- \
-    --image ../images_samples/1.jpg \
-    --v3-weights ../weights/yolov3-tiny-vehicles.weights \
-    --v3-cfg ../configs/yolov3-tiny-vehicles.cfg \
-    --v4-weights ../weights/yolov4-tiny-vehicles.weights \
-    --v4-cfg ../configs/yolov4-tiny-vehicles.cfg \
-    --v8-onnx ../weights/yolov8n-vehicles.onnx \
-    --iterations 100
+./target/release/benchmark \
+    --val-images ../aic_hcmc2020/images/val \
+    --val-labels ../aic_hcmc2020/labels/val \
+    --v3-weights ../weights/yolov3-tiny-vehicles_best.weights \
+    --v3-cfg ../configs/yolov3-tiny-vehicles-infer.cfg
+```
+
+**With CUDA acceleration:**
+```bash
+./target/release/benchmark \
+    --cuda \
+    --val-images ../aic_hcmc2020/images/val \
+    --val-labels ../aic_hcmc2020/labels/val \
+    --v3-weights ../weights/yolov3-tiny-vehicles_best.weights \
+    --v3-cfg ../configs/yolov3-tiny-vehicles-infer.cfg
+```
+
+**Compare multiple models:**
+```bash
+./target/release/benchmark \
+    --val-images ../aic_hcmc2020/images/val \
+    --val-labels ../aic_hcmc2020/labels/val \
+    --v3-weights ../weights/yolov3-tiny-vehicles_best.weights \
+    --v3-cfg ../configs/yolov3-tiny-vehicles-infer.cfg \
+    --v4-weights ../weights/yolov4-tiny-vehicles_best.weights \
+    --v4-cfg ../configs/yolov4-tiny-vehicles-infer.cfg \
+    --v8-onnx ../weights/yolov8n-vehicles/weights/best.onnx
+```
+
+**Single image speed test:**
+```bash
+./target/release/benchmark \
+    --image ../aic_hcmc2020/images/val/cam_01_000001.jpg \
+    --iterations 100 \
+    --warmup 10 \
+    --v3-weights ../weights/yolov3-tiny-vehicles_best.weights \
+    --v3-cfg ../configs/yolov3-tiny-vehicles-infer.cfg
 ```
 
 Options:
 - `--cuda` - Use CUDA backend (requires OpenCV with CUDA)
-- `--iterations N` - Number of benchmark iterations
+- `--val-images` / `--val-labels` - Validation set for mAP calculation
+- `--max-images N` - Limit images for faster testing
+- `--image` - Single image for dedicated speed benchmark
+- `--iterations N` - Number of speed benchmark iterations
 - `--warmup N` - Warmup iterations before benchmarking
 
-### Expected Output
+### Example Output
 
 ```
-╔════════════════════════════════════════════════════════╗
-║                    BENCHMARK SUMMARY                    ║
-╚════════════════════════════════════════════════════════╝
++----------------------------------------------------------+
+|                    BENCHMARK SUMMARY                     |
++----------------------------------------------------------+
 
-Comparison (416x256, CPU):
-------------------------------------------------------------
-Model           Mean (ms)          FPS     Relative
-------------------------------------------------------------
-YOLOv3-tiny         XX.XX        XX.XX        1.00x
-YOLOv4-tiny         XX.XX        XX.XX        X.XXx
-YOLOv8n             XX.XX        XX.XX        X.XXx
-------------------------------------------------------------
+==================================================
+Model: YOLOv3-tiny
+==================================================
+Iterations: 4021
+Total time: 19.27s
+Mean time:  4.79ms
+Min time:   2.12ms
+Max time:   441.03ms
+FPS:        208.70
+
+mAP@0.50:   70.13%
+
+Per-class AP@0.50:
+  car: 76.80%
+  motorbike: 68.20%
+  bus: 66.34%
+  truck: 69.18%
 ```
+
+## Benchmark Results
+
+### Speed Comparison (416x256)
+
+| Model | Backend | Mean (ms) | Min (ms) | FPS |
+|-------|---------|-----------|----------|-----|
+| YOLOv3-tiny | CPU | 16.60 | 12.17 | 60.24 |
+| YOLOv3-tiny | CUDA (RTX 3060) | 4.79 | 2.12 | 208.70 |
+| YOLOv4-tiny | CPU | - | - | - |
+| YOLOv4-tiny | CUDA (RTX 3060) | - | - | - |
+| YOLOv8n | CPU | - | - | - |
+| YOLOv8n | CUDA (RTX 3060) | - | - | - |
+
+### mAP Comparison (416x256, IoU=0.50)
+
+| Model | mAP@0.50 | car | motorbike | bus | truck |
+|-------|----------|-----|-----------|-----|-------|
+| YOLOv3-tiny | 70.13% | 76.80% | 68.20% | 66.34% | 69.18% |
+| YOLOv4-tiny | - | - | - | - | - |
+| YOLOv8n | - | - | - | - | - |
+
+> **Note:** mAP calculated using Pascal VOC 11-point interpolation. Darknet reports higher values (~80%) using all-point interpolation (COCO style).
 
 ## Model Comparison
 
