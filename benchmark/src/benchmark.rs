@@ -65,6 +65,26 @@ pub fn run_map_evaluation<M: YoloModel>(
     val_labels_dir: &Path,
     max_images: usize,
 ) -> Result<MapResult, Box<dyn std::error::Error>> {
+    run_map_evaluation_impl(model, val_images_dir, val_labels_dir, max_images, false)
+}
+
+/// Run mAP evaluation with debug output
+pub fn run_map_evaluation_debug<M: YoloModel>(
+    model: &mut M,
+    val_images_dir: &Path,
+    val_labels_dir: &Path,
+    max_images: usize,
+) -> Result<MapResult, Box<dyn std::error::Error>> {
+    run_map_evaluation_impl(model, val_images_dir, val_labels_dir, max_images, true)
+}
+
+fn run_map_evaluation_impl<M: YoloModel>(
+    model: &mut M,
+    val_images_dir: &Path,
+    val_labels_dir: &Path,
+    max_images: usize,
+    debug: bool,
+) -> Result<MapResult, Box<dyn std::error::Error>> {
     let mut all_detections: HashMap<String, Vec<Detection>> = HashMap::new();
     let mut all_ground_truths: HashMap<String, Vec<GroundTruth>> = HashMap::new();
     let mut inference_times: Vec<Duration> = Vec::new();
@@ -110,13 +130,46 @@ pub fn run_map_evaluation<M: YoloModel>(
             model.forward(&image, CONF_THRESHOLD, NMS_THRESHOLD)?;
         inference_times.push(start.elapsed());
 
+        // Debug output for first 3 images
+        if debug && idx < 3 {
+            println!("\n  DEBUG [{}]: image {}x{}", stem, img_width, img_height);
+            println!("    Raw detections: {} boxes", boxes.len());
+            for (i, rect) in boxes.iter().enumerate().take(5) {
+                println!(
+                    "      [{}] class={} conf={:.3} box=({}, {}, {}x{})",
+                    i, class_ids[i], confidences[i], rect.x, rect.y, rect.width, rect.height
+                );
+            }
+            if boxes.len() > 5 {
+                println!("      ... and {} more", boxes.len() - 5);
+            }
+        }
+
         // Convert detections
         let detections = convert_detections(&boxes, &class_ids, &confidences, img_width, img_height);
-        all_detections.insert(stem.to_string(), detections);
+        all_detections.insert(stem.to_string(), detections.clone());
 
         // Load ground truth
         let ground_truths = load_labels(&label_path);
-        all_ground_truths.insert(stem.to_string(), ground_truths);
+        all_ground_truths.insert(stem.to_string(), ground_truths.clone());
+
+        // Debug: compare detections vs ground truth
+        if debug && idx < 3 {
+            println!("    Normalized detections:");
+            for (i, det) in detections.iter().enumerate().take(5) {
+                println!(
+                    "      [{}] class={} conf={:.3} center=({:.3}, {:.3}) size=({:.3}, {:.3})",
+                    i, det.class_id, det.confidence, det.x, det.y, det.width, det.height
+                );
+            }
+            println!("    Ground truth: {} objects", ground_truths.len());
+            for (i, gt) in ground_truths.iter().enumerate().take(5) {
+                println!(
+                    "      [{}] class={} center=({:.3}, {:.3}) size=({:.3}, {:.3})",
+                    i, gt.class_id, gt.x, gt.y, gt.width, gt.height
+                );
+            }
+        }
 
         if (idx + 1) % 500 == 0 || idx + 1 == total_images {
             println!("    Progress: {}/{}", idx + 1, total_images);

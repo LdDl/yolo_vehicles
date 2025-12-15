@@ -12,7 +12,7 @@ use opencv::{
 };
 use std::path::PathBuf;
 
-use benchmark::{benchmark_speed, run_map_evaluation};
+use benchmark::{benchmark_speed, run_map_evaluation, run_map_evaluation_debug};
 use types::{BenchmarkResult, CONF_THRESHOLD, NET_HEIGHT, NET_WIDTH, NMS_THRESHOLD, IOU_THRESHOLD};
 
 #[derive(Parser, Debug)]
@@ -65,6 +65,10 @@ struct Args {
     /// Maximum images to process for mAP (0 = all)
     #[arg(long, default_value_t = 0)]
     max_images: usize,
+
+    /// Enable debug output for detection comparison
+    #[arg(long)]
+    debug: bool,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -268,7 +272,11 @@ fn benchmark_onnx_model(
 
     // mAP evaluation
     if let (Some(ref val_img), Some(ref val_lbl)) = (&args.val_images, &args.val_labels) {
-        let map_result = run_map_evaluation(&mut model, val_img, val_lbl, args.max_images)?;
+        let map_result = if args.debug {
+            run_map_evaluation_debug(&mut model, val_img, val_lbl, args.max_images)?
+        } else {
+            run_map_evaluation(&mut model, val_img, val_lbl, args.max_images)?
+        };
         result.map50 = Some(map_result.map);
         result.per_class_ap = Some(map_result.per_class_ap);
 
