@@ -18,7 +18,7 @@ from pathlib import Path
 def main():
     parser = argparse.ArgumentParser(description='Train YOLOv8n for vehicles detection')
     parser.add_argument('--epochs', type=int, default=100, help='Number of epochs')
-    parser.add_argument('--batch', type=int, default=16, help='Batch size')
+    parser.add_argument('--batch', type=int, default=-1, help='Batch size (-1 for auto)')
     parser.add_argument('--imgsz', type=int, default=416, help='Image size (single int for training)')
     parser.add_argument('--device', type=str, default='0', help='CUDA device (0, 1, cpu)')
     parser.add_argument('--workers', type=int, default=8, help='Number of dataloader workers')
