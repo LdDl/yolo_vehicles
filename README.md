@@ -34,7 +34,8 @@ vehicles_yolo/
 │   ├── generate_file_lists.sh      # Generate train/val file lists
 │   ├── train_darknet.sh            # Train v3-tiny, v4-tiny
 │   ├── train_ultralytics.py        # Train v8n
-│   └── create_videos.sh            # Convert dataset images to videos
+│   ├── create_videos.sh            # Convert dataset images to videos
+│   └── distill_annotations.py      # Generate pseudo-labels with teacher model
 ├── videos/                         # Generated test videos
 │   ├── train/                      # 30 videos from train images
 │   └── val/                        # 30 videos from val images
@@ -421,6 +422,91 @@ let model = ModelYOLOClassic::new_from_darknet_file(
     vec![],
 )?;
 ```
+
+## Improving Smaller Models (Distillation)
+
+You can improve tiny/nano model performance by using a larger "teacher" model to generate pseudo-labels on unlabeled video data. This is a form of knowledge distillation.
+
+### How It Works
+
+1. **Collect video footage** - Traffic cameras, dashcams, or any vehicle footage
+2. **Extract frames** - Sample every Nth frame to avoid redundancy
+3. **Auto-annotate** - Run YOLOv8-large to detect vehicles with high confidence
+4. **Train** - Add pseudo-labeled data to your training set
+
+### Get Teacher Model
+
+The script uses YOLOv8-large by default. Ultralytics auto-downloads it on first run, or you can download manually:
+
+```bash
+wget https://github.com/ultralytics/assets/releases/download/v8.3.0/yolov8l.pt -O weights/yolov8l.pt
+```
+
+### Generate Pseudo-Labels
+
+**From existing images:**
+
+```bash
+python scripts/distill_annotations.py \
+    --image-dir path/to/images/ \
+    --teacher weights/yolov8l.pt \
+    --confidence 0.6
+```
+
+**From videos (extracts frames):**
+
+```bash
+python scripts/distill_annotations.py \
+    --video-dir path/to/videos/ \
+    --teacher weights/yolov8l.pt \
+    --confidence 0.6 \
+    --frame-step 10
+```
+
+The script automatically maps COCO classes to vehicle classes:
+- `car` (COCO 2) → `car` (0)
+- `motorcycle` (COCO 3) → `motorbike` (1)
+- `bus` (COCO 5) → `bus` (2)
+- `truck` (COCO 7) → `truck` (3)
+
+**Using fine-tuned teacher model:**
+
+For better annotations, first fine-tune YOLOv8l on your labeled data:
+
+```bash
+yolo detect train model=yolov8l.pt data=data/vehicles.yaml epochs=50 imgsz=640
+```
+
+Then use it as teacher:
+
+```bash
+python scripts/distill_annotations.py \
+    --video-dir path/to/videos/ \
+    --teacher runs/detect/train/weights/best.pt \
+    --no-coco-mapping \
+    --confidence 0.5
+```
+
+### Options
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--image-dir` | - | Directory with images (.jpg, .png) |
+| `--video` | - | Single video file |
+| `--video-dir` | - | Directory with videos (.mp4, .avi) |
+| `--output` | `distilled_data` | Output directory for labels |
+| `--teacher` | `yolov8l.pt` | Teacher model path |
+| `--confidence` | `0.5` | Min confidence to keep detection |
+| `--frame-step` | `10` | Extract every Nth frame (videos only) |
+| `--copy-images` | false | Copy images to output dir |
+| `--no-coco-mapping` | false | Use direct class IDs (custom teacher) |
+
+### Tips
+
+- **Higher confidence = cleaner labels** - Use 0.5-0.7 to avoid teacher errors
+- **Diverse footage helps** - Different cameras, angles, weather conditions
+- **Review samples** - Spot-check annotations before large training runs
+- **Mix with original data** - Don't replace labeled data, augment it
 
 ## Legacy Files
 
