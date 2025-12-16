@@ -4,6 +4,23 @@ use std::path::Path;
 
 use crate::types::{Detection, GroundTruth, NUM_CLASSES};
 
+/// Per-class metrics (TP, FP, FN counts)
+#[derive(Debug, Clone)]
+pub struct ClassMetrics {
+    pub tp: usize,
+    pub fp: usize,
+    pub fn_: usize,  // fn is reserved keyword
+}
+
+/// Extended evaluation results
+#[derive(Debug)]
+pub struct EvalResults {
+    pub map: f64,
+    pub per_class_ap: Vec<f64>,
+    pub per_class_metrics: Vec<ClassMetrics>,
+    pub confusion_matrix: Vec<Vec<usize>>,  // [actual][predicted]
+}
+
 /// Calculate IoU between a detection and ground truth box (center format, normalized)
 pub fn calculate_iou(det: &Detection, gt: &GroundTruth) -> f32 {
     // Convert center format to corner format
@@ -89,14 +106,23 @@ pub fn calculate_ap(
     ap
 }
 
-/// Calculate mAP across all images
+/// Calculate mAP, confusion matrix, and F1 scores across all images
 pub fn calculate_map(
     all_detections: &HashMap<String, Vec<Detection>>,
     all_ground_truths: &HashMap<String, Vec<GroundTruth>>,
     iou_threshold: f32,
-) -> (f64, Vec<f64>) {
+) -> EvalResults {
     let mut per_class_detections: Vec<Vec<(f32, bool)>> = vec![Vec::new(); NUM_CLASSES];
     let mut per_class_num_gt: Vec<usize> = vec![0; NUM_CLASSES];
+
+    // Confusion matrix: [actual_class][predicted_class]
+    // +1 for "background" (false positives with no GT match)
+    let mut confusion_matrix: Vec<Vec<usize>> = vec![vec![0; NUM_CLASSES + 1]; NUM_CLASSES + 1];
+
+    // TP/FP/FN counters per class
+    let mut per_class_tp: Vec<usize> = vec![0; NUM_CLASSES];
+    let mut per_class_fp: Vec<usize> = vec![0; NUM_CLASSES];
+    let mut per_class_fn: Vec<usize> = vec![0; NUM_CLASSES];
 
     // Count ground truths per class
     for gts in all_ground_truths.values() {
@@ -111,6 +137,7 @@ pub fn calculate_map(
     for (image_name, detections) in all_detections {
         let ground_truths = all_ground_truths.get(image_name).cloned().unwrap_or_default();
         let mut gt_matched: Vec<bool> = vec![false; ground_truths.len()];
+        let mut gt_matched_by: Vec<Option<usize>> = vec![None; ground_truths.len()]; // which class matched it
 
         // Sort detections by confidence (process high confidence first)
         let mut sorted_dets = detections.clone();
@@ -121,35 +148,52 @@ pub fn calculate_map(
                 continue;
             }
 
+            // Find best matching ground truth (any class, for confusion matrix)
             let mut best_iou = 0.0;
             let mut best_gt_idx = None;
 
-            // Find best matching ground truth
             for (gt_idx, gt) in ground_truths.iter().enumerate() {
-                if gt.class_id != det.class_id || gt_matched[gt_idx] {
+                if gt_matched[gt_idx] {
                     continue;
                 }
-
                 let iou = calculate_iou(det, gt);
-                if iou > best_iou {
+                if iou > best_iou && iou >= iou_threshold {
                     best_iou = iou;
                     best_gt_idx = Some(gt_idx);
                 }
             }
 
             // Determine if true positive or false positive
-            let is_tp = if best_iou >= iou_threshold {
-                if let Some(idx) = best_gt_idx {
-                    gt_matched[idx] = true;
-                    true
+            if let Some(gt_idx) = best_gt_idx {
+                let gt_class = ground_truths[gt_idx].class_id;
+                gt_matched[gt_idx] = true;
+                gt_matched_by[gt_idx] = Some(det.class_id);
+
+                if gt_class == det.class_id {
+                    // True positive: correct class
+                    per_class_detections[det.class_id].push((det.confidence, true));
+                    per_class_tp[det.class_id] += 1;
+                    confusion_matrix[gt_class][det.class_id] += 1;
                 } else {
-                    false
+                    // Class mismatch: detection matched GT but wrong class
+                    per_class_detections[det.class_id].push((det.confidence, false));
+                    per_class_fp[det.class_id] += 1;
+                    confusion_matrix[gt_class][det.class_id] += 1; // actual -> predicted
                 }
             } else {
-                false
-            };
+                // False positive: no matching GT
+                per_class_detections[det.class_id].push((det.confidence, false));
+                per_class_fp[det.class_id] += 1;
+                confusion_matrix[NUM_CLASSES][det.class_id] += 1; // background -> predicted
+            }
+        }
 
-            per_class_detections[det.class_id].push((det.confidence, is_tp));
+        // Count false negatives (unmatched ground truths)
+        for (gt_idx, gt) in ground_truths.iter().enumerate() {
+            if !gt_matched[gt_idx] && gt.class_id < NUM_CLASSES {
+                per_class_fn[gt.class_id] += 1;
+                confusion_matrix[gt.class_id][NUM_CLASSES] += 1; // actual -> background (missed)
+            }
         }
     }
 
@@ -174,7 +218,21 @@ pub fn calculate_map(
         0.0
     };
 
-    (map, per_class_ap)
+    // Collect per-class metrics (TP, FP, FN counts)
+    let per_class_metrics: Vec<ClassMetrics> = (0..NUM_CLASSES)
+        .map(|class_id| ClassMetrics {
+            tp: per_class_tp[class_id],
+            fp: per_class_fp[class_id],
+            fn_: per_class_fn[class_id],
+        })
+        .collect();
+
+    EvalResults {
+        map,
+        per_class_ap,
+        per_class_metrics,
+        confusion_matrix,
+    }
 }
 
 /// Load ground truth labels from YOLO format file

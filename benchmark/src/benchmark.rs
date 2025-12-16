@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 
 use opencv::{imgcodecs::imread, prelude::*};
 
-use crate::metrics::{calculate_map, load_labels};
+use crate::metrics::{calculate_map, load_labels, ClassMetrics};
 use crate::models::{convert_detections, YoloModel};
 use crate::types::{Detection, GroundTruth, CONF_THRESHOLD, IOU_THRESHOLD, NMS_THRESHOLD};
 
@@ -51,6 +51,8 @@ where
 pub struct MapResult {
     pub map: f64,
     pub per_class_ap: Vec<f64>,
+    pub per_class_metrics: Vec<ClassMetrics>,
+    pub confusion_matrix: Vec<Vec<usize>>,
     pub num_images: usize,
     pub total_inference_time: Duration,
     pub mean_inference_time: Duration,
@@ -176,8 +178,8 @@ fn run_map_evaluation_impl<M: YoloModel>(
         }
     }
 
-    // Calculate mAP
-    let (map, per_class_ap) = calculate_map(&all_detections, &all_ground_truths, IOU_THRESHOLD);
+    // Calculate mAP and metrics
+    let eval_results = calculate_map(&all_detections, &all_ground_truths, IOU_THRESHOLD);
 
     // Calculate timing stats
     let total_inference_time: Duration = inference_times.iter().sum();
@@ -191,8 +193,10 @@ fn run_map_evaluation_impl<M: YoloModel>(
     let max_inference_time = inference_times.iter().max().copied().unwrap_or(Duration::ZERO);
 
     Ok(MapResult {
-        map,
-        per_class_ap,
+        map: eval_results.map,
+        per_class_ap: eval_results.per_class_ap,
+        per_class_metrics: eval_results.per_class_metrics,
+        confusion_matrix: eval_results.confusion_matrix,
         num_images: total_images,
         total_inference_time,
         mean_inference_time,

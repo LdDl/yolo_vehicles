@@ -29,6 +29,14 @@ pub struct GroundTruth {
     pub height: f32,
 }
 
+/// Per-class metrics for detailed output
+#[derive(Clone)]
+pub struct PerClassMetrics {
+    pub tp: Vec<usize>,
+    pub fp: Vec<usize>,
+    pub fn_: Vec<usize>,
+}
+
 /// Results from benchmarking a single model
 pub struct BenchmarkResult {
     pub model_name: String,
@@ -40,6 +48,8 @@ pub struct BenchmarkResult {
     pub fps: f64,
     pub map50: Option<f64>,
     pub per_class_ap: Option<Vec<f64>>,
+    pub confusion_matrix: Option<Vec<Vec<usize>>>,
+    pub class_metrics: Option<PerClassMetrics>,
 }
 
 impl BenchmarkResult {
@@ -54,6 +64,8 @@ impl BenchmarkResult {
             fps: 0.0,
             map50: None,
             per_class_ap: None,
+            confusion_matrix: None,
+            class_metrics: None,
         }
     }
 

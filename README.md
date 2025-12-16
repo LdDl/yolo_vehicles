@@ -226,6 +226,7 @@ cargo build --release
 **Speed + mAP evaluation (recommended):**
 ```bash
 ./target/release/benchmark \
+    --detailed \
     --val-images ../aic_hcmc2020/images/val \
     --val-labels ../aic_hcmc2020/labels/val \
     --v3-weights ../weights/yolov3-tiny-vehicles_best.weights \
@@ -236,6 +237,7 @@ cargo build --release
 ```bash
 ./target/release/benchmark \
     --cuda \
+    --detailed \
     --val-images ../aic_hcmc2020/images/val \
     --val-labels ../aic_hcmc2020/labels/val \
     --v3-weights ../weights/yolov3-tiny-vehicles_best.weights \
@@ -245,11 +247,13 @@ cargo build --release
 **Compare multiple models:**
 ```bash
 ./target/release/benchmark \
+    --detailed \
+    --cuda \
     --val-images ../aic_hcmc2020/images/val \
     --val-labels ../aic_hcmc2020/labels/val \
     --v3-weights ../weights/yolov3-tiny-vehicles_best.weights \
     --v3-cfg ../configs/yolov3-tiny-vehicles-infer.cfg \
-    --v4-weights ../weights/yolov4-tiny-vehicles_best.weights \
+    --v4-weights ../weights/yolov4-tiny-vehicles_final.weights \
     --v4-cfg ../configs/yolov4-tiny-vehicles-infer.cfg \
     --v8-onnx ../weights/yolov8n-vehicles/weights/best.onnx
 ```
@@ -299,11 +303,78 @@ YOLOv8n                 5.84       171.13       65.37%        0.80x
 
 | Model | mAP@0.50 | car | motorbike | bus | truck |
 |-------|----------|-----|-----------|-----|-------|
-| YOLOv3-tiny | **70.13%** | 76.80% | 68.20% | 66.34% | 69.18% |
-| YOLOv8n | 65.37% | 69.15% | 70.91% | 52.16% | 69.26% |
-| YOLOv4-tiny | 63.66% | 62.07% | 44.67% | 69.54% | 78.37% |
+| YOLOv3-tiny | **69.96%** | 76.68% | 68.11% | 66.19% | 68.88% |
+| YOLOv8n | 65.27% | 69.06% | 70.82% | 51.94% | 69.25% |
+| YOLOv4-tiny | 63.52% | 61.95% | 44.58% | 69.41% | 78.13% |
 
-> **Note:** mAP calculated using Pascal VOC 11-point interpolation. Darknet reports higher values (~80%) using all-point interpolation (COCO style).
+> **Note:** mAP calculated using Pascal VOC 11-point interpolation. Darknet reports higher values (~80%) using all-point interpolation (COCO style). Results may vary slightly (~0.2%) between runs due to GPU floating-point non-determinism.
+
+### F1 Score Comparison (416x256, IoU=0.50)
+
+| Model | Micro F1 | Macro F1 | Precision | Recall |
+|-------|----------|----------|-----------|--------|
+| YOLOv8n | **82.19%** | **81.74%** | 87.25% | 77.68% |
+| YOLOv3-tiny | 78.53% | 80.20% | 79.81% | 77.29% |
+| YOLOv4-tiny | 67.33% | 77.00% | 89.73% | 53.88% |
+
+**Per-class F1 Scores:**
+
+| Model | car | motorbike | bus | truck |
+|-------|-----|-----------|-----|-------|
+| YOLOv8n | **82.78%** | 82.16% | 80.35% | 81.69% |
+| YOLOv3-tiny | 80.77% | 77.52% | **81.15%** | **81.37%** |
+| YOLOv4-tiny | 77.79% | 60.74% | **85.13%** | 84.35% |
+
+> **Key insight:** YOLOv8n has the best overall F1 score despite lower mAP, indicating more balanced precision/recall. YOLOv4-tiny has very high precision (89.73%) but low recall (53.88%), missing many objects.
+
+### Confusion Matrices
+
+<details>
+<summary><strong>YOLOv3-tiny Confusion Matrix</strong></summary>
+
+```
+ Actual\Pred       car motorbike       bus     truck        BG
+--------------------------------------------------------------
+         car      5621        53        19        47      1204
+   motorbike        45     20364         .        12      6676
+         bus       101         .       921        61       169
+       truck       105        25        66      2322       539
+          BG      1222      5058       174       404         .
+```
+
+</details>
+
+<details>
+<summary><strong>YOLOv4-tiny Confusion Matrix</strong></summary>
+
+```
+ Actual\Pred       car motorbike       bus     truck        BG
+--------------------------------------------------------------
+         car      4731        13        16        32      2152
+   motorbike        32     12336         .        12     14717
+         bus        43         .       973        53       183
+       truck        49         7        28      2469       504
+          BG       425      1210       113       315         .
+```
+
+Note: YOLOv4-tiny misses 14,717 motorbikes (54% FN rate), explaining its low recall.
+
+</details>
+
+<details>
+<summary><strong>YOLOv8n Confusion Matrix</strong></summary>
+
+```
+ Actual\Pred       car motorbike       bus     truck        BG
+--------------------------------------------------------------
+         car      5501        27        18        45      1353
+   motorbike        49     20752         .        13      6283
+         bus       125         .       734       157       236
+       truck        93        26        39      2342       557
+          BG       669      2679        66       278         .
+```
+
+</details>
 
 ## Model Comparison
 

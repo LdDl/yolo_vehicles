@@ -13,7 +13,7 @@ use opencv::{
 use std::path::PathBuf;
 
 use benchmark::{benchmark_speed, run_map_evaluation, run_map_evaluation_debug};
-use types::{BenchmarkResult, CONF_THRESHOLD, NET_HEIGHT, NET_WIDTH, NMS_THRESHOLD, IOU_THRESHOLD};
+use types::{BenchmarkResult, PerClassMetrics, CONF_THRESHOLD, NET_HEIGHT, NET_WIDTH, NMS_THRESHOLD, IOU_THRESHOLD, CLASSES, NUM_CLASSES};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -69,6 +69,10 @@ struct Args {
     /// Enable debug output for detection comparison
     #[arg(long)]
     debug: bool,
+
+    /// Print detailed metrics (confusion matrix, F1 scores)
+    #[arg(long)]
+    detailed: bool,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -124,7 +128,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Print results
-    print_summary(&results, backend_name);
+    print_summary(&results, backend_name, args.detailed);
 
     if results.is_empty() {
         print_usage();
@@ -216,6 +220,15 @@ fn benchmark_darknet_model(
     // mAP evaluation
     if let (Some(ref val_img), Some(ref val_lbl)) = (&args.val_images, &args.val_labels) {
         let map_result = run_map_evaluation(&mut model, val_img, val_lbl, args.max_images)?;
+
+        // Store detailed metrics for summary output
+        result.confusion_matrix = Some(map_result.confusion_matrix);
+        result.class_metrics = Some(PerClassMetrics {
+            tp: map_result.per_class_metrics.iter().map(|m| m.tp).collect(),
+            fp: map_result.per_class_metrics.iter().map(|m| m.fp).collect(),
+            fn_: map_result.per_class_metrics.iter().map(|m| m.fn_).collect(),
+        });
+
         result.map50 = Some(map_result.map);
         result.per_class_ap = Some(map_result.per_class_ap);
 
@@ -277,6 +290,15 @@ fn benchmark_onnx_model(
         } else {
             run_map_evaluation(&mut model, val_img, val_lbl, args.max_images)?
         };
+
+        // Store detailed metrics for summary output
+        result.confusion_matrix = Some(map_result.confusion_matrix);
+        result.class_metrics = Some(PerClassMetrics {
+            tp: map_result.per_class_metrics.iter().map(|m| m.tp).collect(),
+            fp: map_result.per_class_metrics.iter().map(|m| m.fp).collect(),
+            fn_: map_result.per_class_metrics.iter().map(|m| m.fn_).collect(),
+        });
+
         result.map50 = Some(map_result.map);
         result.per_class_ap = Some(map_result.per_class_ap);
 
@@ -296,7 +318,7 @@ fn benchmark_onnx_model(
     Ok(result)
 }
 
-fn print_summary(results: &[BenchmarkResult], backend_name: &str) {
+fn print_summary(results: &[BenchmarkResult], backend_name: &str, detailed: bool) {
     println!("\n");
     println!("+----------------------------------------------------------+");
     println!("|                    BENCHMARK SUMMARY                     |");
@@ -338,6 +360,78 @@ fn print_summary(results: &[BenchmarkResult], backend_name: &str) {
             );
         }
         println!("{:-<75}", "");
+    }
+
+    // Detailed metrics (confusion matrix and F1 scores) for each model
+    if detailed {
+        for result in results {
+            if let (Some(ref matrix), Some(ref metrics)) = (&result.confusion_matrix, &result.class_metrics) {
+                println!("\n\n{}", "=".repeat(80));
+                println!("DETAILED METRICS: {}", result.model_name);
+                println!("{}", "=".repeat(80));
+
+                // Print confusion matrix
+                println!("\nConfusion Matrix:");
+                let classes_with_bg: Vec<&str> = CLASSES.iter().copied().chain(std::iter::once("BG")).collect();
+                print!("{:>12}", "Actual\\Pred");
+                for class in &classes_with_bg {
+                    print!("{:>10}", class);
+                }
+                println!();
+                println!("{}", "-".repeat(12 + 10 * classes_with_bg.len()));
+                for (i, row) in matrix.iter().enumerate() {
+                    print!("{:>12}", classes_with_bg[i]);
+                    for &count in row {
+                        if count > 0 {
+                            print!("{:>10}", count);
+                        } else {
+                            print!("{:>10}", ".");
+                        }
+                    }
+                    println!();
+                }
+
+                // Print F1 table
+                println!("\nPrecision / Recall / F1:");
+                println!("{:>12} {:>8} {:>8} {:>8} {:>10} {:>10} {:>10}",
+                         "Class", "TP", "FP", "FN", "Precision", "Recall", "F1");
+                println!("{}", "-".repeat(78));
+
+                let mut total_tp = 0usize;
+                let mut total_fp = 0usize;
+                let mut total_fn = 0usize;
+                let mut f1_sum = 0.0f64;
+
+                for i in 0..NUM_CLASSES {
+                    let tp = metrics.tp[i];
+                    let fp = metrics.fp[i];
+                    let fn_ = metrics.fn_[i];
+                    total_tp += tp;
+                    total_fp += fp;
+                    total_fn += fn_;
+
+                    let precision = if tp + fp > 0 { tp as f64 / (tp + fp) as f64 } else { 0.0 };
+                    let recall = if tp + fn_ > 0 { tp as f64 / (tp + fn_) as f64 } else { 0.0 };
+                    let f1 = if precision + recall > 0.0 { 2.0 * precision * recall / (precision + recall) } else { 0.0 };
+                    f1_sum += f1;
+
+                    println!("{:>12} {:>8} {:>8} {:>8} {:>10.2}% {:>10.2}% {:>10.2}%",
+                             CLASSES[i], tp, fp, fn_,
+                             precision * 100.0, recall * 100.0, f1 * 100.0);
+                }
+
+                let micro_precision = if total_tp + total_fp > 0 { total_tp as f64 / (total_tp + total_fp) as f64 } else { 0.0 };
+                let micro_recall = if total_tp + total_fn > 0 { total_tp as f64 / (total_tp + total_fn) as f64 } else { 0.0 };
+                let micro_f1 = if micro_precision + micro_recall > 0.0 { 2.0 * micro_precision * micro_recall / (micro_precision + micro_recall) } else { 0.0 };
+                let macro_f1 = f1_sum / NUM_CLASSES as f64;
+
+                println!("{}", "-".repeat(78));
+                println!("{:>12} {:>8} {:>8} {:>8} {:>10.2}% {:>10.2}% {:>10.2}% (micro)",
+                         "Total", total_tp, total_fp, total_fn,
+                         micro_precision * 100.0, micro_recall * 100.0, micro_f1 * 100.0);
+                println!("{:>64} {:>10.2}% (macro)", "", macro_f1 * 100.0);
+            }
+        }
     }
 }
 

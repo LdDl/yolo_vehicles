@@ -6,7 +6,9 @@ description = "Benchmark YOLOv3-tiny, YOLOv4-tiny, YOLOv8n for vehicles detectio
 
 [dependencies]
 # Use local od_opencv for testing letterbox fix
-od_opencv = { path = "/home/dimitrii/rust_work/object-detection-opencv-rust" }
+# od_opencv = { path = "/home/dimitrii/rust_work/object-detection-opencv-rust" }
+# od_opencv = { path = "/home/dimitrii/rust_work/object-detection-opencv-rust", features = ["letterbox"] }
+od_opencv = { version = "0.3.0", features = ["letterbox"] }
 opencv = { version = "0.96.0", default-features = false, features = ["dnn", "imgcodecs", "imgproc"] }
 clap = { version = "4", features = ["derive"] }
 
