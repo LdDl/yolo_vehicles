@@ -135,12 +135,11 @@ def annotate_with_teacher(
 
             annotations.append(f"{cls_id} {cx:.6f} {cy:.6f} {w:.6f} {h:.6f}")
 
-        # Save annotation file
-        if annotations:
-            label_path = output_dir / f"{img_path.stem}.txt"
-            with open(label_path, 'w') as f:
-                f.write('\n'.join(annotations))
-            total_annotations += len(annotations)
+        # Save annotation file (always create, even if empty)
+        label_path = output_dir / f"{img_path.stem}.txt"
+        with open(label_path, 'w') as f:
+            f.write('\n'.join(annotations))
+        total_annotations += len(annotations)
 
     return total_annotations
 
