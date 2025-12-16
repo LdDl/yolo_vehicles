@@ -1,0 +1,16 @@
+# Python dependencies for YOLO vehicles training
+#
+# Install with: pip install -r requirements.txt
+
+# Ultralytics YOLOv8
+ultralytics>=8.3.237
+
+# ONNX export support
+onnx>=1.20.0
+onnxruntime>=1.23.2
+# For cuda
+# onnxruntime-gpu>=1.23.2
+
+# Optional: for visualization
+matplotlib>=3.10.8
+seaborn>=0.13.2

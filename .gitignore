@@ -6,3 +6,17 @@ val_detect_vehicle_yolov5.txt
 train_detect_vehicle_yolov4.txt
 val_detect_vehicle_yolov4.txt
 trained_weights/
+*.tar.gz
+*.png
+!chart_vehicles.png
+*.weights
+*.cfg
+!configs/*.cfg
+*.data
+!data/*.data
+*.bak
+*.list
+*.darknet
+venv/
+weights/
+videos/
