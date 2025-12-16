@@ -508,6 +508,24 @@ python scripts/distill_annotations.py \
 - **Review samples** - Spot-check annotations before large training runs
 - **Mix with original data** - Don't replace labeled data, augment it
 
+### Merge with Training Data
+
+Pseudo-labeled data should only be added to the **training set** (not validation - keep human-labeled data for accurate metrics):
+
+```bash
+# 1. Copy distilled images to train
+cp distilled_data/images/*.jpg aic_hcmc2020/images/train/
+
+# 2. Copy distilled labels to train
+cp distilled_data/labels/*.txt aic_hcmc2020/labels/train/
+
+# 3. For Darknet: also copy labels to images dir
+cp distilled_data/labels/*.txt aic_hcmc2020/images/train/
+
+# 4. Regenerate file lists
+./scripts/generate_file_lists.sh
+```
+
 ## Legacy Files
 
 Old configuration files are kept for reference:
