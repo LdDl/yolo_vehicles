@@ -35,7 +35,8 @@ vehicles_yolo/
 │   ├── train_darknet.sh            # Train v3-tiny, v4-tiny
 │   ├── train_ultralytics.py        # Train v8n
 │   ├── create_videos.sh            # Convert dataset images to videos
-│   └── distill_annotations.py      # Generate pseudo-labels with teacher model
+│   ├── distill_annotations.py      # Generate pseudo-labels with teacher model
+│   └── split_distilled.sh          # Split distilled data into train/val
 ├── videos/                         # Generated test videos
 │   ├── train/                      # 30 videos from train images
 │   └── val/                        # 30 videos from val images
@@ -500,6 +501,7 @@ python scripts/distill_annotations.py \
 | `--frame-step` | `10` | Extract every Nth frame (videos only) |
 | `--copy-images` | false | Copy images to output dir |
 | `--no-coco-mapping` | false | Use direct class IDs (custom teacher) |
+| `--val-split` | `0.0` | Fraction for validation (e.g., 0.1 = 10%). Creates train/val subdirs |
 
 ### Tips
 
@@ -521,6 +523,41 @@ cp distilled_data/labels/*.txt aic_hcmc2020/labels/train/
 
 # 3. For Darknet: also copy labels to images dir
 cp distilled_data/labels/*.txt aic_hcmc2020/images/train/
+```
+
+**If you trust the teacher model**, you can use `--val-split` to create both train and validation sets from distilled data:
+
+```bash
+python scripts/distill_annotations.py \
+    --image-dir path/to/images/ \
+    --teacher weights/yolov8l.pt \
+    --confidence 0.6 \
+    --val-split 0.1
+
+# Output:
+# distilled_data/train/images/
+# distilled_data/train/labels/
+# distilled_data/val/images/
+# distilled_data/val/labels/
+```
+
+Or split existing distilled data:
+
+```bash
+# Default: 10% validation
+./scripts/split_distilled.sh
+
+# Custom directory and fraction
+./scripts/split_distilled.sh distilled_data 0.15
+```
+
+Then merge:
+
+```bash
+cp distilled_data/train/images/*.jpg aic_hcmc2020/images/train/
+cp distilled_data/train/labels/*.txt aic_hcmc2020/labels/train/
+cp distilled_data/val/images/*.jpg aic_hcmc2020/images/val/
+cp distilled_data/val/labels/*.txt aic_hcmc2020/labels/val/
 
 # 4. Regenerate file lists
 ./scripts/generate_file_lists.sh

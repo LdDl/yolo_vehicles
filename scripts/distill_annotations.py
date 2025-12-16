@@ -21,6 +21,7 @@ Usage:
 """
 
 import argparse
+import random
 from pathlib import Path
 from ultralytics import YOLO
 
@@ -161,6 +162,8 @@ def main():
         help='Disable COCO->vehicle class mapping (for custom teacher)')
     parser.add_argument('--copy-images', action='store_true',
         help='Copy images to output dir (for --image-dir mode)')
+    parser.add_argument('--val-split', type=float, default=0.0,
+        help='Fraction of data for validation (e.g., 0.1 for 10%%). Creates train/val subdirs.')
     args = parser.parse_args()
 
     # Determine input mode
@@ -252,15 +255,86 @@ def main():
     print("=" * 50)
     print(f"Total images: {total_images}")
     print(f"Total annotations generated: {total_annotations}")
-    print(f"Labels saved to: {labels_dir}")
-    print()
-    print("To use this data for training:")
-    if mode == 'images' and not args.copy_images:
-        print(f"  1. Labels are in {labels_dir}, images stay in {args.image_dir}")
+
+    # Split into train/val if requested
+    if args.val_split > 0:
+        import shutil
+
+        print(f"\nSplitting data: {100*(1-args.val_split):.0f}% train, {100*args.val_split:.0f}% val...")
+
+        # Get all label files
+        label_files = list(labels_dir.glob('*.txt'))
+        random.shuffle(label_files)
+
+        val_count = int(len(label_files) * args.val_split)
+        val_labels = label_files[:val_count]
+        train_labels = label_files[val_count:]
+
+        # Create train/val structure
+        train_img_dir = args.output / 'train' / 'images'
+        train_lbl_dir = args.output / 'train' / 'labels'
+        val_img_dir = args.output / 'val' / 'images'
+        val_lbl_dir = args.output / 'val' / 'labels'
+
+        for d in [train_img_dir, train_lbl_dir, val_img_dir, val_lbl_dir]:
+            d.mkdir(parents=True, exist_ok=True)
+
+        # Determine source image directory
+        if mode == 'images' and not args.copy_images:
+            src_img_dir = args.image_dir
+        else:
+            src_img_dir = images_dir
+
+        # Move train files
+        for lbl in train_labels:
+            stem = lbl.stem
+            shutil.move(str(lbl), train_lbl_dir / lbl.name)
+            # Find and move corresponding image
+            for ext in ['.jpg', '.png']:
+                img = src_img_dir / f"{stem}{ext}"
+                if img.exists():
+                    if mode == 'images' and not args.copy_images:
+                        shutil.copy(str(img), train_img_dir / img.name)
+                    else:
+                        shutil.move(str(img), train_img_dir / img.name)
+                    break
+
+        # Move val files
+        for lbl in val_labels:
+            stem = lbl.stem
+            shutil.move(str(lbl), val_lbl_dir / lbl.name)
+            for ext in ['.jpg', '.png']:
+                img = src_img_dir / f"{stem}{ext}"
+                if img.exists():
+                    if mode == 'images' and not args.copy_images:
+                        shutil.copy(str(img), val_img_dir / img.name)
+                    else:
+                        shutil.move(str(img), val_img_dir / img.name)
+                    break
+
+        # Clean up old flat dirs if empty
+        if labels_dir.exists() and not any(labels_dir.iterdir()):
+            labels_dir.rmdir()
+        if images_dir.exists() and not any(images_dir.iterdir()):
+            images_dir.rmdir()
+
+        print(f"Train: {len(train_labels)} images")
+        print(f"Val: {len(val_labels)} images")
+        print(f"\nOutput structure:")
+        print(f"  {args.output}/train/images/")
+        print(f"  {args.output}/train/labels/")
+        print(f"  {args.output}/val/images/")
+        print(f"  {args.output}/val/labels/")
     else:
-        print(f"  1. Images and labels are in {args.output}")
-    print(f"  2. Review/clean annotations if needed")
-    print(f"  3. Add to your training set and update file lists")
+        print(f"Labels saved to: {labels_dir}")
+        print()
+        print("To use this data for training:")
+        if mode == 'images' and not args.copy_images:
+            print(f"  1. Labels are in {labels_dir}, images stay in {args.image_dir}")
+        else:
+            print(f"  1. Images and labels are in {args.output}")
+        print(f"  2. Review/clean annotations if needed")
+        print(f"  3. Add to your training set and update file lists")
 
 
 if __name__ == '__main__':
