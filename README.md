@@ -1,12 +1,14 @@
 # YOLO Vehicles Detection
 
-Training and benchmarking YOLOv3-tiny, YOLOv4-tiny, and YOLOv8n for vehicle detection.
+Training and benchmarking YOLO models for vehicle detection:
+- **Darknet**: YOLOv3-tiny, YOLOv4-tiny
+- **Ultralytics**: YOLOv8n, YOLOv9t, YOLOv11n
 
 All models are configured for **416x256** input size (16:9 aspect ratio) for fair performance comparison and optimized for edge devices like Jetson Nano.
 
-> **Note on YOLOv8 training**: Ultralytics `imgsz` only accepts a single integer during training (e.g., `imgsz=416`). Use `rect=True` to enable rectangular batching that adapts to each batch's aspect ratio. See [ultralytics#235](https://github.com/ultralytics/ultralytics/issues/235).
+> **Note on Ultralytics training**: The `imgsz` parameter only accepts a single integer during training (e.g., `imgsz=416`). Use `rect=True` to enable rectangular batching that adapts to each batch's aspect ratio. See [ultralytics#235](https://github.com/ultralytics/ultralytics/issues/235).
 >
-> **Note on YOLOv8 export**: For export, `imgsz` accepts `[height, width]`. Ultralytics uses height-first order, while Darknet uses width-first. To export a 416x256 (width x height) ONNX matching Darknet configs, use `imgsz=256,416`.
+> **Note on Ultralytics export**: For export, `imgsz` accepts `[height, width]`. Ultralytics uses height-first order, while Darknet uses width-first. To export a 416x256 (width x height) ONNX matching Darknet configs, use `imgsz=256,416`.
 
 ## Classes
 
@@ -33,8 +35,10 @@ vehicles_yolo/
 │   ├── prepare_dataset.py          # Dataset preparation
 │   ├── generate_file_lists.sh      # Generate train/val file lists
 │   ├── train_darknet.sh            # Train v3-tiny, v4-tiny
-│   ├── train_ultralytics.py        # Train v8n
-│   └── create_videos.sh            # Convert dataset images to videos
+│   ├── train_ultralytics.py        # Train v8n, v9t, v11n
+│   ├── create_videos.sh            # Convert dataset images to videos
+│   ├── distill_annotations.py      # Generate pseudo-labels with teacher model
+│   └── split_distilled.sh          # Split distilled data into train/val
 ├── videos/                         # Generated test videos
 │   ├── train/                      # 30 videos from train images
 │   └── val/                        # 30 videos from val images
@@ -184,16 +188,28 @@ Train:
 ./scripts/train_darknet.sh v4-tiny
 ```
 
-#### YOLOv8n (Ultralytics)
+#### YOLOv8n / YOLOv9t / YOLOv11n (Ultralytics)
+
+The unified training script supports all Ultralytics models:
 
 ```bash
-python scripts/train_ultralytics.py --epochs 100
+# YOLOv8n (default)
+python scripts/train_ultralytics.py --model v8n --epochs 100
+
+# YOLOv9t (tiny - smallest, ~2.0M params)
+python scripts/train_ultralytics.py --model v9t --epochs 100
+
+# YOLOv11n (nano - ~2.6M params)
+python scripts/train_ultralytics.py --model v11n --epochs 100
 ```
 
 Options:
-- `--pretrained` - Start from COCO pretrained weights (recommended)
+- `--model v8n|v9t|v11n` - Model variant (default: v8n)
 - `--batch 16` - Adjust batch size for your GPU
 - `--device 0` - CUDA device ID
+- `--scratch` - Train from scratch (recommended for custom datasets)
+
+Output weights are saved to `weights/<model>-vehicles/weights/best.pt` and automatically exported to ONNX.
 
 ## Inference (Testing Detection)
 
@@ -216,10 +232,17 @@ darknet detector test data/vehicles.data \
     -dont_show -out_filename predictions.jpg
 ```
 
-### YOLOv8n (Ultralytics)
+### YOLOv8n / YOLOv9t / YOLOv11n (Ultralytics)
 
 ```bash
+# YOLOv8n
 yolo detect predict model=weights/yolov8n-vehicles/weights/best.pt source=path/to/image.jpg
+
+# YOLOv9t
+yolo detect predict model=weights/yolov9t-vehicles/weights/best.pt source=path/to/image.jpg
+
+# YOLOv11n
+yolo detect predict model=weights/yolov11n-vehicles/weights/best.pt source=path/to/image.jpg
 ```
 
 Results are saved to `runs/detect/predict/` by default.
@@ -269,7 +292,9 @@ cargo build --release
     --v3-cfg ../configs/yolov3-tiny-vehicles-infer.cfg \
     --v4-weights ../weights/yolov4-tiny-vehicles_final.weights \
     --v4-cfg ../configs/yolov4-tiny-vehicles-infer.cfg \
-    --v8-onnx ../weights/yolov8n-vehicles/weights/best.onnx
+    --v8-onnx ../weights/yolov8n-vehicles/weights/best.onnx \
+    --v9-onnx ../weights/yolov9t-vehicles/weights/best.onnx \
+    --v11-onnx ../weights/yolov11n-vehicles/weights/best.onnx
 ```
 
 **Single image speed test:**
@@ -289,6 +314,8 @@ Options:
 - `--image` - Single image for dedicated speed benchmark
 - `--iterations N` - Number of speed benchmark iterations
 - `--warmup N` - Warmup iterations before benchmarking
+- `--v9-onnx` - Path to YOLOv9t ONNX model
+- `--v11-onnx` - Path to YOLOv11n ONNX model
 
 ### Example Output
 
@@ -397,6 +424,8 @@ Note: YOLOv4-tiny misses 14,717 motorbikes (54% FN rate), explaining its low rec
 | YOLOv3-tiny | ~8.7M | .cfg + .weights | 416x256 |
 | YOLOv4-tiny | ~6M | .cfg + .weights | 416x256 |
 | YOLOv8n | ~3.2M | .onnx | 416x256 |
+| YOLOv9t | ~2.0M | .onnx | 416x256 |
+| YOLOv11n | ~2.6M | .onnx | 416x256 |
 
 ## Deployment to Jetson Nano
 
@@ -409,6 +438,7 @@ For Jetson Nano deployment using Rust:
 Example with od_opencv in your Rust project:
 
 ```rust
+// Darknet models (v3-tiny, v4-tiny)
 use od_opencv::model_classic::ModelYOLOClassic;
 use opencv::dnn::{DNN_BACKEND_CUDA, DNN_TARGET_CUDA};
 
@@ -420,6 +450,163 @@ let model = ModelYOLOClassic::new_from_darknet_file(
     DNN_TARGET_CUDA,
     vec![],
 )?;
+```
+
+```rust
+// Ultralytics ONNX models (v8n, v9t, v11n)
+use od_opencv::model_ultralytics::ModelUltralyticsV8;
+use opencv::dnn::{DNN_BACKEND_CUDA, DNN_TARGET_CUDA};
+
+let model = ModelUltralyticsV8::new_from_onnx_file(
+    "weights/yolov9t-vehicles/weights/best.onnx",
+    (416, 256),
+    DNN_BACKEND_CUDA,
+    DNN_TARGET_CUDA,
+    vec![],
+)?;
+```
+
+## Improving Smaller Models (Distillation)
+
+You can improve tiny/nano model performance by using a larger "teacher" model to generate pseudo-labels on unlabeled video data. This is a form of knowledge distillation.
+
+### How It Works
+
+1. **Collect video footage** - Traffic cameras, dashcams, or any vehicle footage
+2. **Extract frames** - Sample every Nth frame to avoid redundancy
+3. **Auto-annotate** - Run YOLOv8-large to detect vehicles with high confidence
+4. **Train** - Add pseudo-labeled data to your training set
+
+### Get Teacher Model
+
+The script uses YOLOv8-large by default. Ultralytics auto-downloads it on first run, or you can download manually:
+
+```bash
+wget https://github.com/ultralytics/assets/releases/download/v8.3.0/yolov8l.pt -O weights/yolov8l.pt
+```
+
+### Generate Pseudo-Labels
+
+**From existing images:**
+
+```bash
+python scripts/distill_annotations.py \
+    --image-dir path/to/images/ \
+    --teacher weights/yolov8l.pt \
+    --confidence 0.6
+```
+
+**From videos (extracts frames):**
+
+```bash
+python scripts/distill_annotations.py \
+    --video-dir path/to/videos/ \
+    --teacher weights/yolov8l.pt \
+    --confidence 0.6 \
+    --frame-step 10
+```
+
+The script automatically maps COCO classes to vehicle classes:
+- `car` (COCO 2) → `car` (0)
+- `motorcycle` (COCO 3) → `motorbike` (1)
+- `bus` (COCO 5) → `bus` (2)
+- `truck` (COCO 7) → `truck` (3)
+
+**Using fine-tuned teacher model:**
+
+For better annotations, first fine-tune YOLOv8l on your labeled data:
+
+```bash
+yolo detect train model=yolov8l.pt data=data/vehicles.yaml epochs=50 imgsz=640
+```
+
+Then use it as teacher:
+
+```bash
+python scripts/distill_annotations.py \
+    --video-dir path/to/videos/ \
+    --teacher runs/detect/train/weights/best.pt \
+    --no-coco-mapping \
+    --confidence 0.5
+```
+
+### Options
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--image-dir` | - | Directory with images (.jpg, .png) |
+| `--video` | - | Single video file |
+| `--video-dir` | - | Directory with videos (.mp4, .avi) |
+| `--output` | `distilled_data` | Output directory for labels |
+| `--teacher` | `yolov8l.pt` | Teacher model path |
+| `--confidence` | `0.5` | Min confidence to keep detection |
+| `--frame-step` | `10` | Extract every Nth frame (videos only) |
+| `--copy-images` | false | Copy images to output dir |
+| `--no-coco-mapping` | false | Use direct class IDs (custom teacher) |
+| `--val-split` | `0.0` | Fraction for validation (e.g., 0.1 = 10%). Creates train/val subdirs |
+
+### Tips
+
+- **Higher confidence = cleaner labels** - Use 0.5-0.7 to avoid teacher errors
+- **Diverse footage helps** - Different cameras, angles, weather conditions
+- **Review samples** - Spot-check annotations before large training runs
+- **Mix with original data** - Don't replace labeled data, augment it
+
+### Merge with Training Data
+
+Pseudo-labeled data should only be added to the **training set** (not validation - keep human-labeled data for accurate metrics):
+
+```bash
+# 1. Copy distilled images to train
+cp distilled_data/images/*.jpg aic_hcmc2020/images/train/
+
+# 2. Copy distilled labels to train
+cp distilled_data/labels/*.txt aic_hcmc2020/labels/train/
+
+# 3. For Darknet: also copy labels to images dir
+cp distilled_data/labels/*.txt aic_hcmc2020/images/train/
+```
+
+**If you trust the teacher model**, you can use `--val-split` to create both train and validation sets from distilled data:
+
+```bash
+python scripts/distill_annotations.py \
+    --image-dir path/to/images/ \
+    --teacher weights/yolov8l.pt \
+    --confidence 0.6 \
+    --val-split 0.1
+
+# Output:
+# distilled_data/train/images/
+# distilled_data/train/labels/
+# distilled_data/val/images/
+# distilled_data/val/labels/
+```
+
+Or split existing distilled data:
+
+```bash
+# Default: 10% validation
+./scripts/split_distilled.sh
+
+# Custom directory and fraction
+./scripts/split_distilled.sh distilled_data 0.15
+```
+
+Then merge:
+
+```bash
+cp distilled_data/train/images/*.jpg aic_hcmc2020/images/train/
+cp distilled_data/train/labels/*.txt aic_hcmc2020/labels/train/
+cp distilled_data/val/images/*.jpg aic_hcmc2020/images/val/
+cp distilled_data/val/labels/*.txt aic_hcmc2020/labels/val/
+
+# For Darknet: also copy labels to images dir
+cp distilled_data/train/labels/*.txt aic_hcmc2020/images/train/
+cp distilled_data/val/labels/*.txt aic_hcmc2020/images/val/
+
+# Regenerate file lists
+./scripts/generate_file_lists.sh
 ```
 
 ## Legacy Files
