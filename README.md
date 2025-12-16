@@ -559,7 +559,11 @@ cp distilled_data/train/labels/*.txt aic_hcmc2020/labels/train/
 cp distilled_data/val/images/*.jpg aic_hcmc2020/images/val/
 cp distilled_data/val/labels/*.txt aic_hcmc2020/labels/val/
 
-# 4. Regenerate file lists
+# For Darknet: also copy labels to images dir
+cp distilled_data/train/labels/*.txt aic_hcmc2020/images/train/
+cp distilled_data/val/labels/*.txt aic_hcmc2020/images/val/
+
+# Regenerate file lists
 ./scripts/generate_file_lists.sh
 ```
 
