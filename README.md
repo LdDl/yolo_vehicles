@@ -33,7 +33,11 @@ vehicles_yolo/
 │   ├── prepare_dataset.py          # Dataset preparation
 │   ├── generate_file_lists.sh      # Generate train/val file lists
 │   ├── train_darknet.sh            # Train v3-tiny, v4-tiny
-│   └── train_ultralytics.py        # Train v8n
+│   ├── train_ultralytics.py        # Train v8n
+│   └── create_videos.sh            # Convert dataset images to videos
+├── videos/                         # Generated test videos
+│   ├── train/                      # 30 videos from train images
+│   └── val/                        # 30 videos from val images
 ├── benchmark/                      # Rust benchmark (uses od_opencv crate)
 │   ├── Cargo.toml
 │   └── src/
@@ -93,7 +97,17 @@ cp aic_hcmc2020/labels/train/*.txt aic_hcmc2020/images/train/
 cp aic_hcmc2020/labels/val/*.txt aic_hcmc2020/images/val/
 ```
 
-### 4. Train Models
+### 4. Generate Test Videos (Optional)
+
+Convert dataset images into videos for testing detection in real applications:
+
+```bash
+./scripts/create_videos.sh
+```
+
+This creates MP4 videos from the dataset images. Each video is like a single camera/source for continuous footage. Useful for testing real-time detection pipelines.
+
+### 5. Train Models
 
 #### YOLOv3-tiny / YOLOv4-tiny (Darknet)
 

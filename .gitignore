@@ -19,3 +19,4 @@ trained_weights/
 *.darknet
 venv/
 weights/
+videos/
