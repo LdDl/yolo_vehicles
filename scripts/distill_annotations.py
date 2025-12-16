@@ -24,6 +24,11 @@ import argparse
 from pathlib import Path
 from ultralytics import YOLO
 
+try:
+    from tqdm import tqdm
+except ImportError:
+    tqdm = None
+
 
 # COCO class IDs that map to our vehicle classes
 COCO_TO_VEHICLES = {
@@ -47,10 +52,17 @@ def extract_frames(video_path: Path, output_dir: Path, frame_step: int = 10) -> 
         print(f"Error: Cannot open {video_path}")
         return []
 
+    # Get total frames for progress bar
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    expected_output = total_frames // frame_step
+
     frames = []
     frame_idx = 0
     saved_idx = 0
     video_name = video_path.stem
+
+    # Setup progress bar
+    pbar = tqdm(total=expected_output, desc=f"Extracting {video_name}", unit="frame") if tqdm else None
 
     while True:
         ret, frame = cap.read()
@@ -62,9 +74,13 @@ def extract_frames(video_path: Path, output_dir: Path, frame_step: int = 10) -> 
             cv2.imwrite(str(frame_path), frame)
             frames.append(frame_path)
             saved_idx += 1
+            if pbar:
+                pbar.update(1)
 
         frame_idx += 1
 
+    if pbar:
+        pbar.close()
     cap.release()
     print(f"Extracted {len(frames)} frames from {video_path.name}")
     return frames
@@ -81,7 +97,10 @@ def annotate_with_teacher(
     output_dir.mkdir(parents=True, exist_ok=True)
     total_annotations = 0
 
-    for img_path in image_paths:
+    # Use tqdm if available, otherwise plain iterator
+    iterator = tqdm(image_paths, desc="Annotating", unit="img") if tqdm else image_paths
+
+    for img_path in iterator:
         results = model(img_path, verbose=False)[0]
 
         # Get image dimensions
