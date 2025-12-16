@@ -1,12 +1,14 @@
 # YOLO Vehicles Detection
 
-Training and benchmarking YOLOv3-tiny, YOLOv4-tiny, and YOLOv8n for vehicle detection.
+Training and benchmarking YOLO models for vehicle detection:
+- **Darknet**: YOLOv3-tiny, YOLOv4-tiny
+- **Ultralytics**: YOLOv8n, YOLOv9t, YOLOv11n
 
 All models are configured for **416x256** input size (16:9 aspect ratio) for fair performance comparison and optimized for edge devices like Jetson Nano.
 
-> **Note on YOLOv8 training**: Ultralytics `imgsz` only accepts a single integer during training (e.g., `imgsz=416`). Use `rect=True` to enable rectangular batching that adapts to each batch's aspect ratio. See [ultralytics#235](https://github.com/ultralytics/ultralytics/issues/235).
+> **Note on Ultralytics training**: The `imgsz` parameter only accepts a single integer during training (e.g., `imgsz=416`). Use `rect=True` to enable rectangular batching that adapts to each batch's aspect ratio. See [ultralytics#235](https://github.com/ultralytics/ultralytics/issues/235).
 >
-> **Note on YOLOv8 export**: For export, `imgsz` accepts `[height, width]`. Ultralytics uses height-first order, while Darknet uses width-first. To export a 416x256 (width x height) ONNX matching Darknet configs, use `imgsz=256,416`.
+> **Note on Ultralytics export**: For export, `imgsz` accepts `[height, width]`. Ultralytics uses height-first order, while Darknet uses width-first. To export a 416x256 (width x height) ONNX matching Darknet configs, use `imgsz=256,416`.
 
 ## Classes
 
@@ -33,7 +35,7 @@ vehicles_yolo/
 │   ├── prepare_dataset.py          # Dataset preparation
 │   ├── generate_file_lists.sh      # Generate train/val file lists
 │   ├── train_darknet.sh            # Train v3-tiny, v4-tiny
-│   ├── train_ultralytics.py        # Train v8n
+│   ├── train_ultralytics.py        # Train v8n, v9t, v11n
 │   ├── create_videos.sh            # Convert dataset images to videos
 │   ├── distill_annotations.py      # Generate pseudo-labels with teacher model
 │   └── split_distilled.sh          # Split distilled data into train/val
@@ -186,16 +188,28 @@ Train:
 ./scripts/train_darknet.sh v4-tiny
 ```
 
-#### YOLOv8n (Ultralytics)
+#### YOLOv8n / YOLOv9t / YOLOv11n (Ultralytics)
+
+The unified training script supports all Ultralytics models:
 
 ```bash
-python scripts/train_ultralytics.py --epochs 100
+# YOLOv8n (default)
+python scripts/train_ultralytics.py --model v8n --epochs 100
+
+# YOLOv9t (tiny - smallest, ~2.0M params)
+python scripts/train_ultralytics.py --model v9t --epochs 100
+
+# YOLOv11n (nano - ~2.6M params)
+python scripts/train_ultralytics.py --model v11n --epochs 100
 ```
 
 Options:
-- `--pretrained` - Start from COCO pretrained weights (recommended)
+- `--model v8n|v9t|v11n` - Model variant (default: v8n)
 - `--batch 16` - Adjust batch size for your GPU
 - `--device 0` - CUDA device ID
+- `--scratch` - Train from scratch instead of pretrained (v8n only)
+
+Output weights are saved to `weights/<model>-vehicles/weights/best.pt` and automatically exported to ONNX.
 
 ## Inference (Testing Detection)
 
@@ -218,10 +232,17 @@ darknet detector test data/vehicles.data \
     -dont_show -out_filename predictions.jpg
 ```
 
-### YOLOv8n (Ultralytics)
+### YOLOv8n / YOLOv9t / YOLOv11n (Ultralytics)
 
 ```bash
+# YOLOv8n
 yolo detect predict model=weights/yolov8n-vehicles/weights/best.pt source=path/to/image.jpg
+
+# YOLOv9t
+yolo detect predict model=weights/yolov9t-vehicles/weights/best.pt source=path/to/image.jpg
+
+# YOLOv11n
+yolo detect predict model=weights/yolov11n-vehicles/weights/best.pt source=path/to/image.jpg
 ```
 
 Results are saved to `runs/detect/predict/` by default.
@@ -271,7 +292,9 @@ cargo build --release
     --v3-cfg ../configs/yolov3-tiny-vehicles-infer.cfg \
     --v4-weights ../weights/yolov4-tiny-vehicles_final.weights \
     --v4-cfg ../configs/yolov4-tiny-vehicles-infer.cfg \
-    --v8-onnx ../weights/yolov8n-vehicles/weights/best.onnx
+    --v8-onnx ../weights/yolov8n-vehicles/weights/best.onnx \
+    --v9-onnx ../weights/yolov9t-vehicles/weights/best.onnx \
+    --v11-onnx ../weights/yolov11n-vehicles/weights/best.onnx
 ```
 
 **Single image speed test:**
@@ -291,6 +314,8 @@ Options:
 - `--image` - Single image for dedicated speed benchmark
 - `--iterations N` - Number of speed benchmark iterations
 - `--warmup N` - Warmup iterations before benchmarking
+- `--v9-onnx` - Path to YOLOv9t ONNX model
+- `--v11-onnx` - Path to YOLOv11n ONNX model
 
 ### Example Output
 
@@ -399,6 +424,8 @@ Note: YOLOv4-tiny misses 14,717 motorbikes (54% FN rate), explaining its low rec
 | YOLOv3-tiny | ~8.7M | .cfg + .weights | 416x256 |
 | YOLOv4-tiny | ~6M | .cfg + .weights | 416x256 |
 | YOLOv8n | ~3.2M | .onnx | 416x256 |
+| YOLOv9t | ~2.0M | .onnx | 416x256 |
+| YOLOv11n | ~2.6M | .onnx | 416x256 |
 
 ## Deployment to Jetson Nano
 
@@ -411,12 +438,27 @@ For Jetson Nano deployment using Rust:
 Example with od_opencv in your Rust project:
 
 ```rust
+// Darknet models (v3-tiny, v4-tiny)
 use od_opencv::model_classic::ModelYOLOClassic;
 use opencv::dnn::{DNN_BACKEND_CUDA, DNN_TARGET_CUDA};
 
 let model = ModelYOLOClassic::new_from_darknet_file(
     "weights/yolov4-tiny-vehicles.weights",
     "configs/yolov4-tiny-vehicles.cfg",
+    (416, 256),
+    DNN_BACKEND_CUDA,
+    DNN_TARGET_CUDA,
+    vec![],
+)?;
+```
+
+```rust
+// Ultralytics ONNX models (v8n, v9t, v11n)
+use od_opencv::model_ultralytics::ModelUltralyticsV8;
+use opencv::dnn::{DNN_BACKEND_CUDA, DNN_TARGET_CUDA};
+
+let model = ModelUltralyticsV8::new_from_onnx_file(
+    "weights/yolov9t-vehicles/weights/best.onnx",
     (416, 256),
     DNN_BACKEND_CUDA,
     DNN_TARGET_CUDA,

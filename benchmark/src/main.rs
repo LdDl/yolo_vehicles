@@ -58,6 +58,14 @@ struct Args {
     #[arg(long)]
     v8_onnx: Option<PathBuf>,
 
+    /// Path to YOLOv9t ONNX model (.onnx)
+    #[arg(long)]
+    v9_onnx: Option<PathBuf>,
+
+    /// Path to YOLOv11n ONNX model (.onnx)
+    #[arg(long)]
+    v11_onnx: Option<PathBuf>,
+
     /// Warmup iterations before benchmarking
     #[arg(long, default_value_t = 10)]
     warmup: u32,
@@ -124,6 +132,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Benchmark YOLOv8n
     if let Some(onnx) = &args.v8_onnx {
         let result = benchmark_onnx_model("YOLOv8n", onnx, &args, &speed_image, backend, target)?;
+        results.push(result);
+    }
+
+    // Benchmark YOLOv9t
+    if let Some(onnx) = &args.v9_onnx {
+        let result = benchmark_onnx_model("YOLOv9t", onnx, &args, &speed_image, backend, target)?;
+        results.push(result);
+    }
+
+    // Benchmark YOLOv11n
+    if let Some(onnx) = &args.v11_onnx {
+        let result = benchmark_onnx_model("YOLOv11n", onnx, &args, &speed_image, backend, target)?;
         results.push(result);
     }
 
@@ -448,14 +468,16 @@ fn print_usage() {
     println!("    --val-labels ../aic_hcmc2020/labels/val \\");
     println!("    --v3-weights ../weights/yolov3-tiny-vehicles_best.weights \\");
     println!("    --v3-cfg ../configs/yolov3-tiny-vehicles-infer.cfg");
-    println!("\nFull benchmark (speed + mAP) example:");
+    println!("\nFull benchmark (all models) example:");
     println!("  cargo run --release -- \\");
-    println!("    --image ../aic_hcmc2020/images/val/cam_01_000001.jpg \\");
+    println!("    --cuda --detailed \\");
     println!("    --val-images ../aic_hcmc2020/images/val \\");
     println!("    --val-labels ../aic_hcmc2020/labels/val \\");
     println!("    --v3-weights ../weights/yolov3-tiny-vehicles_best.weights \\");
     println!("    --v3-cfg ../configs/yolov3-tiny-vehicles-infer.cfg \\");
     println!("    --v4-weights ../weights/yolov4-tiny-vehicles_best.weights \\");
     println!("    --v4-cfg ../configs/yolov4-tiny-vehicles-infer.cfg \\");
-    println!("    --v8-onnx ../weights/yolov8n-vehicles/weights/best.onnx");
+    println!("    --v8-onnx ../weights/yolov8n-vehicles/weights/best.onnx \\");
+    println!("    --v9-onnx ../weights/yolov9t-vehicles/weights/best.onnx \\");
+    println!("    --v11-onnx ../weights/yolov11n-vehicles/weights/best.onnx");
 }
