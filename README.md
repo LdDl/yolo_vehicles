@@ -207,7 +207,7 @@ Options:
 - `--model v8n|v9t|v11n` - Model variant (default: v8n)
 - `--batch 16` - Adjust batch size for your GPU
 - `--device 0` - CUDA device ID
-- `--scratch` - Train from scratch instead of pretrained (v8n only)
+- `--scratch` - Train from scratch (recommended for custom datasets)
 
 Output weights are saved to `weights/<model>-vehicles/weights/best.pt` and automatically exported to ONNX.
 

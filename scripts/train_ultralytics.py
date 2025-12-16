@@ -27,12 +27,19 @@ Supported models (lightweight for edge deployment):
 import argparse
 from pathlib import Path
 
-# Model name mappings: our short names -> Ultralytics pretrained weights
+# Model name mappings: our short names -> Ultralytics pretrained weights / architecture configs
 # Focus on lightweight models for edge deployment (Jetson Nano)
-MODEL_MAP = {
+MODEL_PRETRAINED = {
     'v8n': 'yolov8n.pt',   # YOLOv8 nano (~3.2M params)
     'v9t': 'yolov9t.pt',   # YOLOv9 tiny (~2.0M params)
     'v11n': 'yolo11n.pt',  # YOLOv11 nano (~2.6M params)
+}
+
+# Architecture configs for training from scratch (built into Ultralytics)
+MODEL_YAML = {
+    'v8n': 'yolov8n.yaml',
+    'v9t': 'yolov9t.yaml',
+    'v11n': 'yolo11n.yaml',
 }
 
 
@@ -54,12 +61,12 @@ def main():
         epilog="""
 Examples:
     python train_ultralytics.py --model v8n --epochs 100
-    python train_ultralytics.py --model v9t --epochs 100 --pretrained
+    python train_ultralytics.py --model v9t --epochs 100 --scratch
     python train_ultralytics.py --model v11n --epochs 100 --batch 16
         """
     )
     parser.add_argument('--model', type=str, default='v8n',
-                        choices=list(MODEL_MAP.keys()),
+                        choices=list(MODEL_PRETRAINED.keys()),
                         help='Model variant (default: v8n)')
     parser.add_argument('--epochs', type=int, default=100, help='Number of epochs')
     parser.add_argument('--batch', type=int, default=-1, help='Batch size (-1 for auto)')
@@ -67,8 +74,7 @@ Examples:
     parser.add_argument('--device', type=str, default='0', help='CUDA device (0, 1, cpu)')
     parser.add_argument('--workers', type=int, default=8, help='Number of dataloader workers')
     parser.add_argument('--resume', type=str, default=None, help='Resume from checkpoint')
-    parser.add_argument('--pretrained', action='store_true', help='Use COCO pretrained weights (recommended)')
-    parser.add_argument('--scratch', action='store_true', help='Train from scratch (v8n only, uses custom config)')
+    parser.add_argument('--scratch', action='store_true', help='Train from scratch (no pretrained weights)')
     args = parser.parse_args()
 
     # Import here to avoid slow import if just checking --help
@@ -87,7 +93,7 @@ Examples:
     print("=" * 60)
     print(f"{model_name} Training for Vehicles Detection")
     print("=" * 60)
-    print(f"Model: {args.model} ({MODEL_MAP[args.model]})")
+    print(f"Model: {args.model} ({MODEL_PRETRAINED[args.model]})")
     print(f"Data config: {data_yaml}")
     print(f"Image size: {args.imgsz}")
     print(f"Epochs: {args.epochs}")
@@ -99,14 +105,14 @@ Examples:
         # Resume from checkpoint
         print(f"Resuming from: {args.resume}")
         model = YOLO(args.resume)
-    elif args.scratch and args.model == 'v8n':
-        # Train from scratch using custom config (v8n only)
-        print("Training from scratch (custom config)")
-        model_yaml = project_dir / 'configs' / 'yolov8n-vehicles.yaml'
-        model = YOLO(str(model_yaml))
+    elif args.scratch:
+        # Train from scratch using architecture config (no pretrained weights)
+        model_yaml = MODEL_YAML[args.model]
+        print(f"Training from scratch ({model_yaml})")
+        model = YOLO(model_yaml)
     else:
-        # Use pretrained weights (default for v9/v11, optional for v8)
-        pretrained_name = MODEL_MAP[args.model]
+        # Use pretrained COCO weights (transfer learning - recommended)
+        pretrained_name = MODEL_PRETRAINED[args.model]
         print(f"Using COCO pretrained weights ({pretrained_name})")
         model = YOLO(pretrained_name)
 
@@ -122,7 +128,7 @@ Examples:
         project=str(weights_dir),
         name=project_name,
         exist_ok=True,
-        pretrained=args.pretrained or not args.scratch,
+        pretrained=not args.scratch,
         verbose=True,
         rect=True,
     )
