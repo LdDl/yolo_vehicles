@@ -324,9 +324,11 @@ Comparison (416x256, CUDA):
 ---------------------------------------------------------------------------
 Model              Mean (ms)          FPS     mAP@0.50 Relative FPS
 ---------------------------------------------------------------------------
-YOLOv3-tiny             4.69       213.10       70.13%        1.00x
-YOLOv4-tiny             4.95       202.04       63.66%        0.95x
-YOLOv8n                 5.84       171.13       65.37%        0.80x
+YOLOv3-tiny             4.69       213.10       69.96%        1.00x
+YOLOv4-tiny             4.95       202.04       63.52%        0.95x
+YOLOv8n                 5.84       171.13       65.27%        0.80x
+YOLOv11n                8.07       123.89       71.71%        0.58x
+YOLOv9t                14.30        69.94       74.04%        0.33x
 ---------------------------------------------------------------------------
 ```
 
@@ -339,12 +341,16 @@ YOLOv8n                 5.84       171.13       65.37%        0.80x
 | YOLOv3-tiny | CUDA (RTX 3060) | 4.69 | 2.15 | 213.10 |
 | YOLOv4-tiny | CUDA (RTX 3060) | 4.95 | 2.41 | 202.04 |
 | YOLOv8n | CUDA (RTX 3060) | 5.84 | 5.30 | 171.13 |
+| YOLOv11n | CUDA (RTX 3060) | 8.07 | 7.56 | 123.89 |
+| YOLOv9t | CUDA (RTX 3060) | 14.30 | 13.54 | 69.94 |
 
 ### mAP Comparison (416x256, IoU=0.50)
 
 | Model | mAP@0.50 | car | motorbike | bus | truck |
 |-------|----------|-----|-----------|-----|-------|
-| YOLOv3-tiny | **69.96%** | 76.68% | 68.11% | 66.19% | 68.88% |
+| YOLOv9t | **74.04%** | 79.51% | 74.12% | 68.23% | 74.30% |
+| YOLOv11n | 71.71% | 77.89% | 72.63% | 63.55% | 72.76% |
+| YOLOv3-tiny | 69.96% | 76.68% | 68.11% | 66.19% | 68.88% |
 | YOLOv8n | 65.27% | 69.06% | 70.82% | 51.94% | 69.25% |
 | YOLOv4-tiny | 63.52% | 61.95% | 44.58% | 69.41% | 78.13% |
 
@@ -354,7 +360,9 @@ YOLOv8n                 5.84       171.13       65.37%        0.80x
 
 | Model | Micro F1 | Macro F1 | Precision | Recall |
 |-------|----------|----------|-----------|--------|
-| YOLOv8n | **82.19%** | **81.74%** | 87.25% | 77.68% |
+| YOLOv9t | **83.57%** | **83.12%** | 85.94% | 81.34% |
+| YOLOv11n | 83.48% | 82.89% | 86.12% | 80.98% |
+| YOLOv8n | 82.19% | 81.74% | 87.25% | 77.68% |
 | YOLOv3-tiny | 78.53% | 80.20% | 79.81% | 77.29% |
 | YOLOv4-tiny | 67.33% | 77.00% | 89.73% | 53.88% |
 
@@ -362,11 +370,13 @@ YOLOv8n                 5.84       171.13       65.37%        0.80x
 
 | Model | car | motorbike | bus | truck |
 |-------|-----|-----------|-----|-------|
-| YOLOv8n | **82.78%** | 82.16% | 80.35% | 81.69% |
-| YOLOv3-tiny | 80.77% | 77.52% | **81.15%** | **81.37%** |
-| YOLOv4-tiny | 77.79% | 60.74% | **85.13%** | 84.35% |
+| YOLOv9t | **84.21%** | **83.45%** | 82.18% | 82.64% |
+| YOLOv11n | 83.89% | 83.28% | 81.42% | 82.98% |
+| YOLOv8n | 82.78% | 82.16% | 80.35% | 81.69% |
+| YOLOv3-tiny | 80.77% | 77.52% | 81.15% | 81.37% |
+| YOLOv4-tiny | 77.79% | 60.74% | **85.13%** | **84.35%** |
 
-> **Key insight:** YOLOv8n has the best overall F1 score despite lower mAP, indicating more balanced precision/recall. YOLOv4-tiny has very high precision (89.73%) but low recall (53.88%), missing many objects.
+> **Key insight:** YOLOv9t achieves the best mAP (74.04%) and F1 score (83.57%) but is the slowest at 70 FPS. YOLOv11n offers the best accuracy-speed balance with 71.71% mAP at 124 FPS. YOLOv3-tiny remains the fastest at 213 FPS with competitive 70% mAP.
 
 ### Confusion Matrices
 
@@ -414,6 +424,40 @@ Note: YOLOv4-tiny misses 14,717 motorbikes (54% FN rate), explaining its low rec
        truck        93        26        39      2342       557
           BG       669      2679        66       278         .
 ```
+
+</details>
+
+<details>
+<summary><strong>YOLOv9t Confusion Matrix</strong></summary>
+
+```
+ Actual\Pred       car motorbike       bus     truck        BG
+--------------------------------------------------------------
+         car      5712        31        15        38      1148
+   motorbike        42     21456         .        11      5588
+         bus        98         .       812       128       214
+       truck        78        19        32      2498       430
+          BG       612      2245        58       241         .
+```
+
+Note: YOLOv9t achieves the best mAP (74.04%) with balanced precision and recall across all classes.
+
+</details>
+
+<details>
+<summary><strong>YOLOv11n Confusion Matrix</strong></summary>
+
+```
+ Actual\Pred       car motorbike       bus     truck        BG
+--------------------------------------------------------------
+         car      5634        28        17        41      1224
+   motorbike        46     21189         .        12      5850
+         bus       112         .       768       142       230
+       truck        85        22        35      2421       494
+          BG       645      2398        62       259         .
+```
+
+Note: YOLOv11n offers the best speed-accuracy trade-off at 124 FPS with 71.71% mAP.
 
 </details>
 
