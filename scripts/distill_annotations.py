@@ -196,7 +196,10 @@ def main():
 
     # Load teacher model
     model = YOLO(args.teacher)
-    use_coco = not args.no_coco_mapping and 'yolov8' in args.teacher and 'vehicles' not in args.teacher
+    # Enable COCO mapping for pretrained Ultralytics models (v8, v9, v11)
+    teacher_lower = args.teacher.lower()
+    is_ultralytics_pretrained = any(x in teacher_lower for x in ['yolov8', 'yolov9', 'yolo11'])
+    use_coco = not args.no_coco_mapping and is_ultralytics_pretrained and 'vehicles' not in teacher_lower
 
     if use_coco:
         print("Using COCO class mapping (car, motorcycle, bus, truck)")
