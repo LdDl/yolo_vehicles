@@ -21,3 +21,4 @@ venv/
 weights/
 videos/
 distilled_data/
+.venv-rknn/

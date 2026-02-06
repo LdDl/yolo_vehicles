@@ -1,4 +1,4 @@
-use od_opencv::{model_classic::ModelYOLOClassic, model_ultralytics::ModelUltralyticsV8};
+use od_opencv::backend_opencv::{ModelYOLOClassic, ModelUltralyticsV8, model_yolov5::ModelYOLOv5OpenCV};
 use opencv::{core::Rect, prelude::*};
 
 use crate::types::Detection;
@@ -25,6 +25,17 @@ impl YoloModel for ModelYOLOClassic {
 }
 
 impl YoloModel for ModelUltralyticsV8 {
+    fn forward(
+        &mut self,
+        image: &Mat,
+        conf_threshold: f32,
+        nms_threshold: f32,
+    ) -> Result<(Vec<Rect>, Vec<usize>, Vec<f32>), opencv::Error> {
+        self.forward(image, conf_threshold, nms_threshold)
+    }
+}
+
+impl YoloModel for ModelYOLOv5OpenCV {
     fn forward(
         &mut self,
         image: &Mat,
