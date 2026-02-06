@@ -50,22 +50,54 @@ def modify_label_file(src_file: Path, dst_file: Path, remap: bool = True) -> Non
 
 
 def process_labels(labels_dir: Path, output_dir: Path, remap: bool = True) -> None:
-    """Process all label files in directory."""
-    output_dir.mkdir(parents=True, exist_ok=True)
+    """Process all label files in directory (including train/val subdirs)."""
+    # Check if labels are in subdirectories (train/val) or flat
+    subdirs = [d for d in labels_dir.iterdir() if d.is_dir() and d.name in ('train', 'val')]
 
-    for label_file in labels_dir.glob('*.txt'):
-        dst_file = output_dir / label_file.name
-        modify_label_file(label_file, dst_file, remap)
-
-    print(f"Processed labels: {labels_dir} -> {output_dir}")
+    if subdirs:
+        # Process each subdirectory
+        for subdir in subdirs:
+            sub_output = output_dir / subdir.name
+            sub_output.mkdir(parents=True, exist_ok=True)
+            count = 0
+            for label_file in subdir.glob('*.txt'):
+                dst_file = sub_output / label_file.name
+                modify_label_file(label_file, dst_file, remap)
+                count += 1
+            print(f"Processed {count} labels: {subdir} -> {sub_output}")
+    else:
+        # Flat structure
+        output_dir.mkdir(parents=True, exist_ok=True)
+        count = 0
+        for label_file in labels_dir.glob('*.txt'):
+            dst_file = output_dir / label_file.name
+            modify_label_file(label_file, dst_file, remap)
+            count += 1
+        print(f"Processed {count} labels: {labels_dir} -> {output_dir}")
 
 
 def copy_labels_to_images(images_dir: Path, labels_dir: Path) -> None:
     """Copy label files to images directory (YOLO expects them side by side)."""
-    for label_file in labels_dir.glob('*.txt'):
-        shutil.copy(label_file, images_dir / label_file.name)
+    # Check if labels are in subdirectories (train/val) or flat
+    subdirs = [d for d in labels_dir.iterdir() if d.is_dir() and d.name in ('train', 'val')]
 
-    print(f"Copied labels to images directory: {images_dir}")
+    if subdirs:
+        # Copy from each subdirectory to corresponding images subdir
+        for subdir in subdirs:
+            target_dir = images_dir / subdir.name
+            target_dir.mkdir(parents=True, exist_ok=True)
+            count = 0
+            for label_file in subdir.glob('*.txt'):
+                shutil.copy(label_file, target_dir / label_file.name)
+                count += 1
+            print(f"Copied {count} labels to: {target_dir}")
+    else:
+        # Flat structure
+        count = 0
+        for label_file in labels_dir.glob('*.txt'):
+            shutil.copy(label_file, images_dir / label_file.name)
+            count += 1
+        print(f"Copied {count} labels to: {images_dir}")
 
 
 def generate_file_list(

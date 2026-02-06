@@ -2,7 +2,7 @@
 
 Training and benchmarking YOLO models for vehicle detection:
 - **Darknet**: YOLOv3-tiny, YOLOv4-tiny
-- **Ultralytics**: YOLOv8n, YOLOv9t, YOLOv11n
+- **Ultralytics**: YOLOv5n (not update one which is YOLOv5nu), YOLOv8n, YOLOv9t, YOLOv11n
 
 All models are configured for **416x256** input size (16:9 aspect ratio) for fair performance comparison and optimized for edge devices like Jetson Nano.
 
@@ -35,6 +35,7 @@ vehicles_yolo/
 │   ├── prepare_dataset.py          # Dataset preparation
 │   ├── generate_file_lists.sh      # Generate train/val file lists
 │   ├── train_darknet.sh            # Train v3-tiny, v4-tiny
+│   ├── train_yolov5.py             # Train v5n, v5s (not yolov5u)
 │   ├── train_ultralytics.py        # Train v8n, v9t, v11n
 │   ├── create_videos.sh            # Convert dataset images to videos
 │   ├── distill_annotations.py      # Generate pseudo-labels with teacher model
@@ -187,6 +188,39 @@ Train:
 ```bash
 ./scripts/train_darknet.sh v4-tiny
 ```
+
+#### YOLOv5n / YOLOv5s (not YOLOv5u)
+
+YOLOv5 uses a separate repository from Ultralytics (not the updated `yolov5u` / `yolov5nu` in the ultralytics package which has YOLOv8-style output format).
+
+**Setup:**
+
+```bash
+git clone https://github.com/ultralytics/yolov5.git
+cd yolov5 && pip install -r requirements.txt
+cd ..
+```
+
+**Train:**
+
+```bash
+# YOLOv5n
+python scripts/train_yolov5.py --model v5n --epochs 100
+
+# YOLOv5s
+python scripts/train_yolov5.py --model v5s --epochs 100
+
+# Train from scratch
+python scripts/train_yolov5.py --model v5n --epochs 100 --scratch
+```
+
+Options:
+- `--model v5n|v5s|v5m` - Model variant (default: v5n)
+- `--batch 16` - Batch size
+- `--scratch` - Train from scratch (no pretrained weights)
+- `--yolov5-dir path` - Custom YOLOv5 repo path
+
+Output weights are saved to `weights/yolov5n-vehicles/weights/best.pt`.
 
 #### YOLOv8n / YOLOv9t / YOLOv11n (Ultralytics)
 
@@ -341,6 +375,7 @@ YOLOv9t                14.30        69.94       74.04%        0.33x
 | YOLOv3-tiny | CUDA (RTX 3060) | 4.69 | 2.15 | 213.10 |
 | YOLOv4-tiny | CUDA (RTX 3060) | 4.95 | 2.41 | 202.04 |
 | YOLOv8n | CUDA (RTX 3060) | 5.84 | 5.30 | 171.13 |
+| YOLOv5n | CUDA (RTX 3060) | 6.89 | 6.13 | 145.09 |
 | YOLOv11n | CUDA (RTX 3060) | 8.07 | 7.56 | 123.89 |
 | YOLOv9t | CUDA (RTX 3060) | 14.30 | 13.54 | 69.94 |
 
@@ -351,6 +386,7 @@ YOLOv9t                14.30        69.94       74.04%        0.33x
 | YOLOv9t | **74.04%** | 79.51% | 74.12% | 68.23% | 74.30% |
 | YOLOv11n | 71.71% | 77.89% | 72.63% | 63.55% | 72.76% |
 | YOLOv3-tiny | 69.96% | 76.68% | 68.11% | 66.19% | 68.88% |
+| YOLOv5n | 65.48% | 69.48% | 70.97% | 52.26% | 69.20% |
 | YOLOv8n | 65.27% | 69.06% | 70.82% | 51.94% | 69.25% |
 | YOLOv4-tiny | 63.52% | 61.95% | 44.58% | 69.41% | 78.13% |
 
@@ -363,6 +399,7 @@ YOLOv9t                14.30        69.94       74.04%        0.33x
 | YOLOv9t | **83.57%** | **83.12%** | 85.94% | 81.34% |
 | YOLOv11n | 83.48% | 82.89% | 86.12% | 80.98% |
 | YOLOv8n | 82.19% | 81.74% | 87.25% | 77.68% |
+| YOLOv5n | 81.55% | 81.95% | 84.08% | 79.18% |
 | YOLOv3-tiny | 78.53% | 80.20% | 79.81% | 77.29% |
 | YOLOv4-tiny | 67.33% | 77.00% | 89.73% | 53.88% |
 
@@ -373,10 +410,11 @@ YOLOv9t                14.30        69.94       74.04%        0.33x
 | YOLOv9t | **84.21%** | **83.45%** | 82.18% | 82.64% |
 | YOLOv11n | 83.89% | 83.28% | 81.42% | 82.98% |
 | YOLOv8n | 82.78% | 82.16% | 80.35% | 81.69% |
+| YOLOv5n | 82.86% | 81.22% | 82.46% | 81.25% |
 | YOLOv3-tiny | 80.77% | 77.52% | 81.15% | 81.37% |
 | YOLOv4-tiny | 77.79% | 60.74% | **85.13%** | **84.35%** |
 
-> **Key insight:** YOLOv9t achieves the best mAP (74.04%) and F1 score (83.57%) but is the slowest at 70 FPS. YOLOv11n offers the best accuracy-speed balance with 71.71% mAP at 124 FPS. YOLOv3-tiny remains the fastest at 213 FPS with competitive 70% mAP.
+> **Key insight:** YOLOv9t achieves the best mAP (74.04%) and F1 score (83.57%) but is the slowest at 70 FPS. YOLOv11n offers the best accuracy-speed balance with 71.71% mAP at 124 FPS. YOLOv5n performs similarly to YOLOv8n (65.48% vs 65.27% mAP) at 145 FPS. YOLOv3-tiny remains the fastest at 213 FPS with competitive 70% mAP.
 
 ### Confusion Matrices
 
@@ -409,6 +447,21 @@ YOLOv9t                14.30        69.94       74.04%        0.33x
 ```
 
 Note: YOLOv4-tiny misses 14,717 motorbikes (54% FN rate), explaining its low recall.
+
+</details>
+
+<details>
+<summary><strong>YOLOv5n Confusion Matrix</strong></summary>
+
+```
+ Actual\Pred       car motorbike       bus     truck        BG
+--------------------------------------------------------------
+         car      5529        32        18        46      1319
+   motorbike        47     21246         .        14      5790
+         bus       133         .       743       161       215
+       truck       103        25        37      2358       534
+          BG       686      3976        46       333         .
+```
 
 </details>
 
@@ -467,6 +520,8 @@ Note: YOLOv11n offers the best speed-accuracy trade-off at 124 FPS with 71.71% m
 |-------|------------|--------|------------|
 | YOLOv3-tiny | ~8.7M | .cfg + .weights | 416x256 |
 | YOLOv4-tiny | ~6M | .cfg + .weights | 416x256 |
+| YOLOv5n | ~1.9M | .pt / .onnx | 416x256 |
+| YOLOv5s | ~7.2M | .pt / .onnx | 416x256 |
 | YOLOv8n | ~3.2M | .onnx | 416x256 |
 | YOLOv9t | ~2.0M | .onnx | 416x256 |
 | YOLOv11n | ~2.6M | .onnx | 416x256 |
@@ -598,20 +653,31 @@ python scripts/distill_annotations.py \
 
 ### Merge with Training Data
 
-Pseudo-labeled data should only be added to the **training set** (not validation - keep human-labeled data for accurate metrics):
+**Important:** Distilled data is already in the correct class format (0=car, 1=motorbike, 2=bus, 3=truck). Do **NOT** run `prepare_dataset.py` on distilled data - it would incorrectly remap classes.
 
-```bash
-# 1. Copy distilled images to train
-cp distilled_data/images/*.jpg aic_hcmc2020/images/train/
+**Recommended workflow:**
 
-# 2. Copy distilled labels to train
-cp distilled_data/labels/*.txt aic_hcmc2020/labels/train/
+1. First, prepare the original AIC HCMC dataset (applies class remapping):
+   ```bash
+   python scripts/prepare_dataset.py --dataset-dir ./aic_hcmc2020
+   ```
 
-# 3. For Darknet: also copy labels to images dir
-cp distilled_data/labels/*.txt aic_hcmc2020/images/train/
-```
+2. Then add distilled data directly (no remapping needed):
+   ```bash
+   # Copy to train
+   cp distilled_data/images/*.jpg aic_hcmc2020/images/train/
+   cp distilled_data/labels/*.txt aic_hcmc2020/images/train/
+   ```
 
-**If you trust the teacher model**, you can use `--val-split` to create both train and validation sets from distilled data:
+3. Regenerate file lists for Darknet (must include all files):
+   ```bash
+   find $(pwd)/aic_hcmc2020/images/train -name "*.jpg" > train_aic_hcmc.txt
+   find $(pwd)/aic_hcmc2020/images/val -name "*.jpg" > val_aic_hcmc.txt
+   ```
+
+   > **Note:** Darknet expects these file names as configured in `data/vehicles.data`.
+
+**With train/val split** (using `--val-split`):
 
 ```bash
 python scripts/distill_annotations.py \
@@ -620,37 +686,31 @@ python scripts/distill_annotations.py \
     --confidence 0.6 \
     --val-split 0.1
 
-# Output:
+# Output structure:
 # distilled_data/train/images/
 # distilled_data/train/labels/
 # distilled_data/val/images/
 # distilled_data/val/labels/
 ```
 
-Or split existing distilled data:
-
-```bash
-# Default: 10% validation
-./scripts/split_distilled.sh
-
-# Custom directory and fraction
-./scripts/split_distilled.sh distilled_data 0.15
-```
-
-Then merge:
+Then merge both train and val:
 
 ```bash
 cp distilled_data/train/images/*.jpg aic_hcmc2020/images/train/
-cp distilled_data/train/labels/*.txt aic_hcmc2020/labels/train/
-cp distilled_data/val/images/*.jpg aic_hcmc2020/images/val/
-cp distilled_data/val/labels/*.txt aic_hcmc2020/labels/val/
-
-# For Darknet: also copy labels to images dir
 cp distilled_data/train/labels/*.txt aic_hcmc2020/images/train/
+cp distilled_data/val/images/*.jpg aic_hcmc2020/images/val/
 cp distilled_data/val/labels/*.txt aic_hcmc2020/images/val/
 
-# Regenerate file lists
-./scripts/generate_file_lists.sh
+# Regenerate file lists for Darknet
+find $(pwd)/aic_hcmc2020/images/train -name "*.jpg" > train_aic_hcmc.txt
+find $(pwd)/aic_hcmc2020/images/val -name "*.jpg" > val_aic_hcmc.txt
+```
+
+**Verify class distribution after merge:**
+
+```bash
+awk '{print $1}' aic_hcmc2020/images/train/*.txt | sort | uniq -c
+# Expected: 0 (car) should be the majority, not 2 (bus)
 ```
 
 ## Legacy Files
