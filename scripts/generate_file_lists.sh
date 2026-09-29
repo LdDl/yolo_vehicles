@@ -1,13 +1,7 @@
-#!/bin/bash
-# Generate train/val file lists for Darknet
-
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-DATASET_DIR="${1:-$PROJECT_DIR/aic_hcmc2020}"
-
-echo "Dataset: $DATASET_DIR"
-
-find "$DATASET_DIR/images/train" -name "*.jpg" | sort > "$PROJECT_DIR/train_aic_hcmc.txt"
-find "$DATASET_DIR/images/val" -name "*.jpg" | sort > "$PROJECT_DIR/val_aic_hcmc.txt"
-
-echo "Generated: $(wc -l < "$PROJECT_DIR/train_aic_hcmc.txt") train, $(wc -l < "$PROJECT_DIR/val_aic_hcmc.txt") val"
+#!/usr/bin/env bash
+# Regenerate local paths and adjacent Darknet labels for the merged public dataset.
+set -euo pipefail
+project_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+python3 "$project_dir/scripts/prepare_dataset.py" configure \
+  --dataset "${1:-$project_dir/datasets/vehicles/merged}" \
+  --output "$project_dir/data" --backup "$project_dir/weights" --darknet-labels
