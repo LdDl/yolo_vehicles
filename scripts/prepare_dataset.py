@@ -607,10 +607,10 @@ def main(argv=None):
     all_stages = commands.add_parser("all", help="Download both datasets, convert and merge in one run")
     configure = commands.add_parser("configure", help="Write training paths for an existing merged dataset")
     configure.add_argument("--dataset", type=Path, required=True, help="Merged root with images, labels and metadata.json")
-    configure.add_argument("--output", type=Path, default=Path("data"))
+    configure.add_argument("--output", type=Path, default=Path("data/generated"), help="Generated training files (default: data/generated)")
     configure.add_argument("--backup", type=Path, default=Path("weights"))
     configure.add_argument("--darknet-labels", action="store_true", help="Also copy TXT beside JPG for this Darknet fork")
-    all_stages.add_argument("--training-dir", type=Path, help="Also generate training configs and adjacent Darknet labels here")
+    all_stages.add_argument("--training-dir", type=Path, help="Also generate training configs and adjacent Darknet labels; use data/generated for the training scripts")
     all_stages.add_argument("--backup", type=Path, default=Path("weights"))
     for command in (download, convert, all_stages):
         command.add_argument("--directory", type=Path, required=True, help="Directory containing source dataset folders/archives")

@@ -51,7 +51,7 @@ After installing dependencies, run from the project root:
 python3 scripts/prepare_dataset.py all \
   --directory "$PWD/datasets/raw" \
   --output "$PWD/datasets/vehicles" \
-  --training-dir "$PWD/data"
+  --training-dir "$PWD/data/generated"
 ```
 
 This basically downloads and extracts both datasets, converts them into `datasets/vehicles/prepared/junction` and `datasets/vehicles/prepared/mio`, then creates `datasets/vehicles/merged/data.yaml` and the matching image and label directories. Existing source archives or folders are reused without downloading again.
@@ -177,10 +177,12 @@ Existing output directories are never overwritten. For a new class mapping or sp
 ```bash
 python3 scripts/prepare_dataset.py configure \
   --dataset datasets/vehicles/merged \
-  --output data --backup weights --darknet-labels
+  --output data/generated --backup weights --darknet-labels
 ```
 
-This writes absolute image lists to `data/vehicles-{train,val,test}.txt`, plus `data/vehicles.yaml`, `data/vehicles.data`, `data/vehicles-test.data`, and `data/vehicles.names`. It checks image/TXT pairs, normalized boxes, and that resolved file paths do not overlap between splits. This checks paths; it does not search again for similar images.
+This writes absolute image lists to `data/generated/vehicles-{train,val,test}.txt`, plus `data/generated/vehicles.yaml`, `data/generated/vehicles.data`, `data/generated/vehicles-test.data`, and `data/generated/vehicles.names`. It checks image/TXT pairs, normalized boxes, and that resolved file paths do not overlap between splits. This checks paths; it does not search again for similar images.
+
+`configure` defaults to `data/generated/`, which is ignored by Git. These are generated training files with paths specific to the current dataset location. Model templates stay in `configs/`. If the merged dataset is already prepared, run only `configure` to recreate the training files; downloading, conversion, and merging are not repeated.
 
 `--darknet-labels` places TXT copies next to JPG files for my Darknet fork. If a neighboring TXT already exists with different contents, the command stops. The main annotations remain in `labels/`; Ultralytics and the evaluator read them directly. If the dataset path changes, run `configure` again with the new path.
 

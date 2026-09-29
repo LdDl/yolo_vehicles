@@ -256,14 +256,19 @@ class DatasetTests(unittest.TestCase):
         output = self.root / "work"
         output.mkdir()
         (output / "keep.txt").write_text("existing working directory")
+        training = self.root / "data/generated"
         with patch("urllib.request.urlopen", side_effect=AssertionError("Network must not be called")):
             prep.main([
                 "all", "--directory", str(raw), "--output", str(output),
                 "--ratios", "0.5", "0.25", "0.25", "--seed", "17", "--mode", "hardlink",
+                "--training-dir", str(training), "--backup", str(self.root / "weights"),
             ])
         self.assertTrue((output / "prepared/junction/manifest.jsonl").is_file())
         self.assertTrue((output / "prepared/mio/manifest.jsonl").is_file())
         self.assertTrue((output / "merged/data.yaml").is_file())
+        self.assertTrue((training / "vehicles.yaml").is_file())
+        self.assertIn(f"names = {training}/vehicles.names\n", (training / "vehicles.data").read_text())
+        self.assertFalse((training.parent / "vehicles.yaml").exists())
         summary = json.loads((output / "merged/summary.json").read_text())
         self.assertEqual(summary["seed"], 17)
         self.assertEqual(summary["requested_ratios"], {"train": 0.5, "val": 0.25, "test": 0.25})
