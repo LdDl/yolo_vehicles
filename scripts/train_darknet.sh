@@ -1,87 +1,69 @@
-#!/bin/bash
-# Train YOLO v3-tiny or v4-tiny using Darknet (AlexeyAB fork)
-#
-# Prerequisites:
-#   - Darknet compiled with GPU=1 CUDNN=1 OPENCV=1
-#   - Dataset prepared with prepare_dataset.py
-#
-# Usage:
-#   ./train_darknet.sh v3-tiny    # Train YOLOv3-tiny
-#   ./train_darknet.sh v4-tiny    # Train YOLOv4-tiny
-
-set -e
-
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-
-# Configuration
-DATA_FILE="$PROJECT_DIR/data/vehicles.data"
-WEIGHTS_DIR="$PROJECT_DIR/weights"
-
-# Check arguments
-if [ -z "$1" ]; then
-    echo "Usage: $0 <model>"
-    echo "  model: v3-tiny or v4-tiny"
-    exit 1
-fi
-
-MODEL="$1"
-
-case "$MODEL" in
-    v3-tiny|yolov3-tiny)
-        CFG_FILE="$PROJECT_DIR/configs/yolov3-tiny-vehicles.cfg"
-        echo "Training YOLOv3-tiny..."
-        ;;
-    v4-tiny|yolov4-tiny)
-        CFG_FILE="$PROJECT_DIR/configs/yolov4-tiny-vehicles.cfg"
-        echo "Training YOLOv4-tiny..."
-        ;;
-    *)
-        echo "Unknown model: $MODEL"
-        echo "Supported models: v3-tiny, v4-tiny"
-        exit 1
-        ;;
+#!/usr/bin/env bash
+# Train a fresh public-dataset run or resume its existing checkpoint.
+set -euo pipefail
+project_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$project_dir"
+model="${1:-}"
+case "$model" in
+  v3-tiny) base=yolov3-tiny; cutoff=11 ;;
+  v4-tiny) base=yolov4-tiny; cutoff=29 ;;
+  *) printf 'Usage: %s v3-tiny|v4-tiny [--resume checkpoint.weights | --scratch]\n' "$0"; exit 1 ;;
 esac
-
-# Check if darknet is available
-if ! command -v darknet &> /dev/null; then
-    echo "Error: 'darknet' command not found."
-    echo "Please ensure Darknet is compiled and in your PATH."
-    echo "See: https://github.com/AlexeyAB/darknet"
-    exit 1
+shift
+mode=pretrained
+checkpoint=""
+if [[ ${1:-} == --resume && $# == 2 ]]; then
+  mode=resume
+  checkpoint="$2"
+elif [[ ${1:-} == --scratch && $# == 1 ]]; then
+  mode=scratch
+elif (( $# )); then
+  printf '%s\n' 'Expected --resume checkpoint.weights or --scratch' >&2
+  exit 1
 fi
-
-# Check if config exists
-if [ ! -f "$CFG_FILE" ]; then
-    echo "Error: Config file not found: $CFG_FILE"
-    exit 1
+command -v darknet >/dev/null
+cfg="$project_dir/configs/$base-vehicles.cfg"
+source_data="$project_dir/data/generated/vehicles.data"
+run="$project_dir/weights/$base-vehicles"
+data="$project_dir/data/generated/$base-vehicles.data"
+[[ -s "$source_data" ]] || { printf '%s\n' 'Run prepare_dataset.py configure --darknet-labels first.' >&2; exit 1; }
+if [[ $mode != resume && -d "$run" ]]; then
+  printf 'Run already exists: %s; use --resume.\n' "$run" >&2
+  exit 1
 fi
-
-# Check if data file exists
-if [ ! -f "$DATA_FILE" ]; then
-    echo "Error: Data file not found: $DATA_FILE"
-    echo "Run prepare_dataset.py first."
+initial=()
+flags=(-map -dont_show -mAP_epochs 1)
+if [[ $mode == resume ]]; then
+  [[ -s "$checkpoint" ]]
+  previous_best="$run/$base-vehicles_best.weights"
+  if [[ -s "$previous_best" ]]; then
+    saved_best="$(mktemp "$run/$base-vehicles_best-before-resume.XXXXXX.weights")"
+    cp "$previous_best" "$saved_best"
+    printf 'Previous best preserved: %s\n' "$saved_best"
+  fi
+  initial=("$checkpoint")
+elif [[ $mode == pretrained ]]; then
+  pretrained="$project_dir/weights/pretrained"
+  [[ -s "$pretrained/$base.weights" && -s "$pretrained/$base-coco.cfg" ]] || {
+    printf 'Run: python3 scripts/download_pretrained.py --model %s\n' "$model" >&2
     exit 1
+  }
+  partial="$pretrained/$base.conv.$cutoff"
+  if [[ ! -s "$partial" ]]; then
+    darknet partial "$pretrained/$base-coco.cfg" "$pretrained/$base.weights" "$partial.part" "$cutoff"
+    [[ -s "$partial.part" ]]
+    mv "$partial.part" "$partial"
+  fi
+  initial=("$partial")
+  flags+=(-clear)
+else
+  flags+=(-clear)
 fi
-
-# Create weights directory
-mkdir -p "$WEIGHTS_DIR"
-
-echo ""
-echo "Configuration:"
-echo "  Data file: $DATA_FILE"
-echo "  Config file: $CFG_FILE"
-echo "  Weights output: $WEIGHTS_DIR"
-echo ""
-
-# Start training
-# -map flag enables mAP calculation during training
-# -dont_show disables chart window (useful for headless servers)
-# Add -gpus 0,1 for multi-GPU training
-
-cd "$PROJECT_DIR"
-darknet detector train "$DATA_FILE" "$CFG_FILE" -map -dont_show
-
-echo ""
-echo "Training complete!"
-echo "Best weights: $WEIGHTS_DIR/yolov*_best.weights"
+mkdir -p "$run" "$(dirname "$data")"
+awk -v backup="$run" '
+  /^[[:space:]]*backup[[:space:]]*=/ { print "backup = " backup; next }
+  { print }
+' "$source_data" > "$data"
+cp "$cfg" "$run/$base-vehicles.cfg"
+cp "$project_dir/configs/$base-vehicles-infer.cfg" "$run/$base-vehicles-infer.cfg"
+darknet detector train "$data" "$cfg" "${initial[@]}" "${flags[@]}" 2>&1 | tee -a "$run/train.log"
