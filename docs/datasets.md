@@ -38,7 +38,7 @@ My setup requires Python 3.10+. You also need Pillow to read image headers. So h
 ```bash
 python3 -m venv .venv-data
 source .venv-data/bin/activate
-python -m pip install -r requirements-data.txt
+python3 -m pip install -r requirements-data.txt
 ```
 
 > **Note:** don't forget to deactivate the virtual environment when done.
@@ -48,7 +48,7 @@ python -m pip install -r requirements-data.txt
 After installing dependencies, run from the project root:
 
 ```bash
-python scripts/prepare_dataset.py all \
+python3 scripts/prepare_dataset.py all \
   --directory "$PWD/datasets/raw" \
   --output "$PWD/datasets/vehicles" \
   --training-dir "$PWD/data"
@@ -59,7 +59,7 @@ This basically downloads and extracts both datasets, converts them into `dataset
 For local source files:
 
 ```bash
-python scripts/prepare_dataset.py all \
+python3 scripts/prepare_dataset.py all \
   --directory datasets/raw \
   --output datasets/vehicles
 ```
@@ -78,7 +78,7 @@ If some stages are complete, continue with the commands below or choose a new wo
 ### 1. Download and extract
 
 ```bash
-python scripts/prepare_dataset.py download \
+python3 scripts/prepare_dataset.py download \
   --directory datasets/raw
 ```
 
@@ -107,7 +107,7 @@ datasets/raw/
 ### 2. Convert annotations
 
 ```bash
-python scripts/prepare_dataset.py convert \
+python3 scripts/prepare_dataset.py convert \
   --directory datasets/raw \
   --output datasets/vehicles/prepared
 ```
@@ -137,7 +137,7 @@ datasets/vehicles/prepared/
 ### 3. Merge and create train/val/test splits
 
 ```bash
-python scripts/prepare_dataset.py merge \
+python3 scripts/prepare_dataset.py merge \
   --inputs datasets/vehicles/prepared/junction datasets/vehicles/prepared/mio \
   --output datasets/vehicles/merged \
   --ratios 0.8 0.1 0.1 \
@@ -175,7 +175,7 @@ Existing output directories are never overwritten. For a new class mapping or sp
 ### 4. Configure training files
 
 ```bash
-python scripts/prepare_dataset.py configure \
+python3 scripts/prepare_dataset.py configure \
   --dataset datasets/vehicles/merged \
   --output data --backup weights --darknet-labels
 ```
@@ -275,5 +275,5 @@ The full validation run used temporary directories and hard links. It checked JP
 Tests cover conversion, reusing existing downloads, extraction, annotation conflicts, unique filenames, and reproducible splitting:
 
 ```bash
-python -m unittest discover -s tests -p 'test_prepare_dataset.py' -v
+python3 -m unittest discover -s tests -p 'test_prepare_dataset.py' -v
 ```

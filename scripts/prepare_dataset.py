@@ -189,7 +189,7 @@ def image_size(path):
     try:
         from PIL import Image
     except ImportError as error:
-        raise ValueError("Image headers require Pillow: python -m pip install Pillow") from error
+        raise ValueError("Image headers require Pillow: python3 -m pip install Pillow") from error
     # Read the actual image header without resizing, rotating or decoding pixels.
     with Image.open(path) as image:
         return image.size
