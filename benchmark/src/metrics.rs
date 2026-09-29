@@ -9,7 +9,8 @@ use crate::types::{Detection, GroundTruth, NUM_CLASSES};
 pub struct ClassMetrics {
     pub tp: usize,
     pub fp: usize,
-    pub fn_: usize,  // fn is reserved keyword
+    // fn is reserved keyword
+    pub fn_: usize,
 }
 
 /// Extended evaluation results
@@ -18,7 +19,8 @@ pub struct EvalResults {
     pub map: f64,
     pub per_class_ap: Vec<f64>,
     pub per_class_metrics: Vec<ClassMetrics>,
-    pub confusion_matrix: Vec<Vec<usize>>,  // [actual][predicted]
+    // [actual][predicted]
+    pub confusion_matrix: Vec<Vec<usize>>,
 }
 
 /// Calculate IoU between a detection and ground truth box (center format, normalized)
@@ -58,10 +60,7 @@ pub fn calculate_iou(det: &Detection, gt: &GroundTruth) -> f32 {
 
 /// Calculate Average Precision for a single class using 11-point interpolation
 /// tuple `detections`: Vector of (confidence, is_true_positive)
-pub fn calculate_ap(
-    detections: &mut Vec<(f32, bool)>,
-    num_ground_truths: usize,
-) -> f64 {
+pub fn calculate_ap(detections: &mut Vec<(f32, bool)>, num_ground_truths: usize) -> f64 {
     if num_ground_truths == 0 {
         return 0.0;
     }
@@ -135,9 +134,13 @@ pub fn calculate_map(
 
     // Match detections to ground truths
     for (image_name, detections) in all_detections {
-        let ground_truths = all_ground_truths.get(image_name).cloned().unwrap_or_default();
+        let ground_truths = all_ground_truths
+            .get(image_name)
+            .cloned()
+            .unwrap_or_default();
         let mut gt_matched: Vec<bool> = vec![false; ground_truths.len()];
-        let mut gt_matched_by: Vec<Option<usize>> = vec![None; ground_truths.len()]; // which class matched it
+        // which class matched it
+        let mut gt_matched_by: Vec<Option<usize>> = vec![None; ground_truths.len()];
 
         // Sort detections by confidence (process high confidence first)
         let mut sorted_dets = detections.clone();
@@ -178,13 +181,15 @@ pub fn calculate_map(
                     // Class mismatch: detection matched GT but wrong class
                     per_class_detections[det.class_id].push((det.confidence, false));
                     per_class_fp[det.class_id] += 1;
-                    confusion_matrix[gt_class][det.class_id] += 1; // actual -> predicted
+                    // actual -> predicted
+                    confusion_matrix[gt_class][det.class_id] += 1;
                 }
             } else {
                 // False positive: no matching GT
                 per_class_detections[det.class_id].push((det.confidence, false));
                 per_class_fp[det.class_id] += 1;
-                confusion_matrix[NUM_CLASSES][det.class_id] += 1; // background -> predicted
+                // background -> predicted
+                confusion_matrix[NUM_CLASSES][det.class_id] += 1;
             }
         }
 
@@ -192,7 +197,8 @@ pub fn calculate_map(
         for (gt_idx, gt) in ground_truths.iter().enumerate() {
             if !gt_matched[gt_idx] && gt.class_id < NUM_CLASSES {
                 per_class_fn[gt.class_id] += 1;
-                confusion_matrix[gt.class_id][NUM_CLASSES] += 1; // actual -> background (missed)
+                // actual -> background (missed)
+                confusion_matrix[gt.class_id][NUM_CLASSES] += 1;
             }
         }
     }
@@ -203,7 +209,10 @@ pub fn calculate_map(
     let mut valid_classes = 0;
 
     for class_id in 0..NUM_CLASSES {
-        let ap = calculate_ap(&mut per_class_detections[class_id], per_class_num_gt[class_id]);
+        let ap = calculate_ap(
+            &mut per_class_detections[class_id],
+            per_class_num_gt[class_id],
+        );
         per_class_ap.push(ap);
 
         if per_class_num_gt[class_id] > 0 {
