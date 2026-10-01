@@ -1,130 +1,206 @@
 # YOLO Vehicles Detection
 
 Training and benchmarking YOLO models for vehicle detection:
+
 - **Darknet**: YOLOv3-tiny, YOLOv4-tiny
-- **Ultralytics**: YOLOv5n (not update one which is YOLOv5nu), YOLOv8n, YOLOv9t, YOLOv11n
+- **Ultralytics**: YOLOv5nu, YOLOv8n, YOLOv9t, YOLOv11n
 
-All models are configured for **416x256** input size (16:9 aspect ratio) for fair performance comparison and optimized for edge devices like Jetson Nano.
+> **Note on YOLOv5nu:** `n` means nano, and `u` identifies the updated Ultralytics variant. Compared with the original YOLOv5n, it uses a YOLOv8-style detection head without predefined anchor boxes or a separate objectness score. This changes both the architecture and output layout. Keep the `u` suffix in benchmark results to identify the model correctly. See [YOLOv5u details](https://docs.ultralytics.com/models/yolov5/).
 
-> **Note on Ultralytics training**: The `imgsz` parameter only accepts a single integer during training (e.g., `imgsz=416`). Use `rect=True` to enable rectangular batching that adapts to each batch's aspect ratio. See [ultralytics#235](https://github.com/ultralytics/ultralytics/issues/235).
->
-> **Note on Ultralytics export**: For export, `imgsz` accepts `[height, width]`. Ultralytics uses height-first order, while Darknet uses width-first. To export a 416x256 (width x height) ONNX matching Darknet configs, use `imgsz=256,416`.
+All models use the combined **Junction + MIO-TCD** dataset, the same train/val/test split, and **416x256** input for benchmarking. The target is vehicle detection on edge devices like Jetson Nano.
+
+> **Note on input size:** 416x256 is width x height, with a 13:8 aspect ratio. Letterbox adds padding to preserve the original image proportions.
+
+> **Note on Ultralytics training:** The `imgsz` parameter only accepts a single integer during training (e.g., `imgsz=416`). Use `rect=True` to enable rectangular batching that adapts to each batch's aspect ratio. See [ultralytics#235](https://github.com/ultralytics/ultralytics/issues/235).
+
+> **Note on Ultralytics export:** `imgsz` uses `[height, width]`. The scripts export ONNX with `imgsz=[256,416]` to match the Darknet input size.
 
 ## Classes
 
 | ID | Class |
-|----|-------|
+| :--- | :--- |
 | 0 | car |
 | 1 | motorbike |
 | 2 | bus |
 | 3 | truck |
 
+## Datasets
+
+| Source | Included subset | Original annotation format |
+| :--- | :--- | :--- |
+| [Junction, version 1](https://data.mendeley.com/datasets/vwjg6b7kpt/1) | Public sample of 3952 images | `sample_labels.csv` and `sampled_images/` |
+| [MIO-TCD Localization](https://tcd.miovision.com/challenge/dataset.html) | Annotated `train` subset, 110000 images before filtering | `gt_train.csv` and `train/` |
+
+Both datasets are converted to YOLO annotations and merged by [scripts/prepare_dataset.py](scripts/prepare_dataset.py).
+
+This will:
+
+- Map source categories to our four classes using explicit dictionaries
+- Use actual JPG dimensions to fix the incorrect sizes in the Junction CSV
+- Keep background images with empty TXT files
+- Exclude MIO images containing the ambiguous `motorized_vehicle` category
+- Remove exact duplicates and exclude identical images with conflicting labels
+- Group related Junction frames and augmentations before splitting
+
+**Prepared split** (`seed=42`, Junction then MIO, 80/10/10):
+
+| Split | Images |
+| :--- | ---: |
+| train | 62587 |
+| val | 7456 |
+| test | 7460 |
+
+These are dataset counts, not model results. Each run saves its actual counts to `summary.json`.
+
+> **Note:** Junction provides a public sample, not the complete dataset from the paper. The official MIO test set has no available labels, so our val/test splits come from its annotated train set. MIO camera IDs are unavailable; this split does not guarantee evaluation on unseen cameras. Classes are not automatically balanced.
+
+See [docs/datasets.md](docs/datasets.md) for class mappings, filtering, and cleanup instructions. MIO's original README specifies **CC BY-NC-SA 4.0**; annotation conversion does not change the dataset license.
+
 ## Project Structure
 
-```
+```text
 vehicles_yolo/
-├── configs/
-│   ├── yolov3-tiny-vehicles.cfg    # Darknet config (416x256, 4 classes)
-│   ├── yolov4-tiny-vehicles.cfg    # Darknet config (416x256, 4 classes)
-│   └── yolov8n-vehicles.yaml       # Ultralytics config (4 classes)
-├── data/
-│   ├── vehicles.names              # Class names
-│   ├── vehicles.data               # Darknet data file
-│   └── vehicles.yaml               # Ultralytics data file
-├── scripts/
-│   ├── prepare_dataset.py          # Dataset preparation
-│   ├── generate_file_lists.sh      # Generate train/val file lists
-│   ├── train_darknet.sh            # Train v3-tiny, v4-tiny
-│   ├── train_yolov5.py             # Train v5n, v5s (not yolov5u)
-│   ├── train_ultralytics.py        # Train v8n, v9t, v11n
-│   ├── create_videos.sh            # Convert dataset images to videos
-│   ├── distill_annotations.py      # Generate pseudo-labels with teacher model
-│   └── split_distilled.sh          # Split distilled data into train/val
-├── videos/                         # Generated test videos
-│   ├── train/                      # 30 videos from train images
-│   └── val/                        # 30 videos from val images
-├── benchmark/                      # Rust benchmark (uses od_opencv crate)
-│   ├── Cargo.toml
-│   └── src/
-│       ├── main.rs                 # CLI and orchestration
-│       ├── benchmark.rs            # Speed and mAP evaluation
-│       ├── metrics.rs              # IoU, AP, mAP calculation
-│       ├── models.rs               # YoloModel trait
-│       └── types.rs                # Constants and structs
-├── weights/                        # Trained weights output
-├── requirements.txt
-└── README.md
+|-- configs/                         Darknet training and inference configs
+|-- data/generated/                  Generated class names and training paths
+|-- scripts/
+|   |-- prepare_dataset.py           Download, convert, merge, configure paths
+|   |-- download_pretrained.py       Download official initial weights
+|   |-- generate_file_lists.sh       Configure an existing merged dataset
+|   |-- train_darknet.sh             Train v3-tiny, v4-tiny
+|   |-- train_ultralytics.py         Train v5nu, v8n, v9t, v11n
+|   `-- create_videos.sh             Create a slideshow from validation images
+|-- datasets/
+|   |-- raw/                         Archives and extracted datasets
+|   `-- vehicles/
+|       |-- prepared/                Converted source datasets
+|       `-- merged/                  Final images/labels and train/val/test splits
+|-- benchmark/                      Rust benchmark (uses od_opencv)
+|-- docs/datasets.md                Dataset formats, mappings, and cleanup
+|-- weights/                        Initial weights and training output
+|-- tests/                          Preparation and launcher checks
+|-- requirements-data.txt           Dataset preparation dependencies
+|-- requirements.txt                Training and export dependencies
+`-- README.md
 ```
 
 ## Quick Start
 
-### 1. Download Dataset
+The workflow is:
 
-Download the AIC HCMC 2020 dataset from [Kaggle](https://www.kaggle.com/datasets/hungkhoi/vehicle-counting-aic-hcmc-2020).
+1. Install dependencies and prepare the combined Junction + MIO-TCD dataset once.
+2. Generate training paths and use the supplied four-class model configs.
+3. Train YOLOv3-tiny, YOLOv4-tiny, YOLOv5nu, YOLOv8n, YOLOv9t, and YOLO11n one at a time on the same split.
+4. Convert the two Darknet models with `darknet2onnx`. The Ultralytics training script exports each best checkpoint to ONNX automatically.
+5. Keep the trained weights, matching configs, ONNX files, and evaluation data for benchmarking.
+6. Compare the models with the Rust benchmark through ONNX Runtime, using 416x256 input for every model.
 
-```bash
-# Extract the dataset
-tar -xzf aic_hcmc2020.tar.gz
-```
+Run the setup, training, and export commands below from the project root. Then follow [Benchmarking](#benchmarking) to measure speed and accuracy.
 
-### 2. Install Dependencies
+### 1. Install Dependencies
 
-```bash
-# Create and activate virtual environment
-python -m venv venv
-source venv/bin/activate
-
-# Install Python dependencies (for YOLOv8)
-pip install -r requirements.txt
-```
-
-### 3. Prepare Dataset
+Use **Python 3.12** for training. Dataset preparation alone needs Python 3.10+ and [requirements-data.txt](requirements-data.txt).
 
 ```bash
-python scripts/prepare_dataset.py --dataset-dir ./aic_hcmc2020/aic_hcmc2020
+python3.12 -m venv .venv
+source .venv/bin/activate
+python3 -m pip install --upgrade pip
+python3 -m pip install torch==2.6.0+cu124 torchvision==0.21.0+cu124 \
+  --index-url https://download.pytorch.org/whl/cu124
+python3 -m pip install -r requirements.txt
 ```
 
-This will:
-- Remap class IDs if needed
-- Copy labels to images directory
-- Generate train/val file lists for both Darknet and Ultralytics
-
-If your dataset already has the correct structure (`images/train`, `images/val`, `labels/train`, `labels/val`), you can skip the Python script and just generate file lists:
+These PyTorch packages use CUDA 12.4. Check that the GPU is available:
 
 ```bash
-./scripts/generate_file_lists.sh
+nvidia-smi
+python3 -c 'import torch; print(torch.__version__, torch.cuda.is_available()); print(torch.cuda.get_device_name(0))'
 ```
 
-**Note:** Darknet expects label files in the same directory as images. Copy them if needed:
+Darknet must be available as `darknet`, built with GPU and cuDNN support. OpenCV is needed for Darknet charts. Dataset preparation and the Rust benchmark do not use OpenCV; the benchmark runs ONNX models through ONNX Runtime.
+
+### 2. Download and Prepare Datasets
 
 ```bash
-cp aic_hcmc2020/labels/train/*.txt aic_hcmc2020/images/train/
-cp aic_hcmc2020/labels/val/*.txt aic_hcmc2020/images/val/
+python3 scripts/prepare_dataset.py all \
+  --directory datasets/raw \
+  --output datasets/vehicles \
+  --training-dir data/generated
 ```
 
-### 4. Generate Test Videos (Optional)
+This downloads missing datasets, converts labels, creates the merged train/val/test split, and generates files in `data/generated/` for both Darknet and Ultralytics.
 
-Convert dataset images into videos for testing detection in real applications:
+- Existing archives or extracted datasets are reused
+- Existing output datasets are not overwritten
+- Original annotations stay in `labels/`
+- TXT copies are also placed next to images for this Darknet fork
+
+**Already prepared the merged dataset?** Just configure its paths:
 
 ```bash
-./scripts/create_videos.sh
+python3 scripts/prepare_dataset.py configure \
+  --dataset /absolute/path/to/merged \
+  --output data/generated --backup weights --darknet-labels
 ```
 
-This creates MP4 videos from the dataset images. Each video is like a single camera/source for continuous footage. Useful for testing real-time detection pipelines.
+> **Note:** Run `configure` again after moving the dataset. Files in `data/generated/` contain absolute paths; the merged dataset's own `data.yaml` and images/labels structure are portable. Generated paths, datasets, and weights are ignored by Git.
 
-### 5. Train Models
+`configure` defaults to `data/generated/`. This keeps generated training files separate from the model templates in `configs/`. For an existing merged dataset, this step only regenerates training files and checks image/label pairs.
+
+**Training files prepared by this step:**
+
+| File | Used by |
+| :--- | :--- |
+| `data/generated/vehicles.yaml` | Ultralytics training on the merged train/val/test split |
+| `data/generated/vehicles.data` | Darknet training and validation |
+| `data/generated/vehicles-test.data` | Final Darknet evaluation on test |
+| `data/generated/vehicles-{train,val,test}.txt` | Absolute image paths for each split |
+| `data/generated/vehicles.names` | Shared class order: car, motorbike, bus, truck |
+
+The model configs are already in `configs/yolov3-tiny-vehicles.cfg` and `configs/yolov4-tiny-vehicles.cfg`, with matching `-infer.cfg` files. They specify four classes and 416x256 input. The Darknet wrapper creates a separate backup directory and saves copies of both configs for each run. Ultralytics uses the selected model's architecture and the classes from `data/generated/vehicles.yaml`; it does not need a Darknet CFG.
+
+### 3. Download Pretrained Weights
+
+```bash
+python3 scripts/download_pretrained.py --model v3-tiny
+python3 scripts/download_pretrained.py --model v4-tiny
+python3 scripts/download_pretrained.py --model v5nu
+python3 scripts/download_pretrained.py --model v8n
+python3 scripts/download_pretrained.py --model v9t
+python3 scripts/download_pretrained.py --model v11n
+```
+
+Weights are saved to `weights/pretrained/`. Run only the corresponding download command if you are preparing one model at a time. `--model all` downloads all six models. Existing nonempty files are reused; incomplete downloads stay in `.part` files.
+
+For Darknet, the download includes full COCO weights and matching configs. The training script runs `darknet partial` to extract the first **11 layers for v3-tiny** or **29 layers for v4-tiny**. The four-class prediction heads are trained on our dataset. No separate Google Drive download is needed.
+
+The downloaded `*-coco.cfg` describes the original 80-class model and is used only to extract initial weights. Training uses the four-class config from `configs/`:
+
+| Command | Config for `darknet partial` | Config for training |
+| :--- | :--- | :--- |
+| `bash scripts/train_darknet.sh v3-tiny` | `weights/pretrained/yolov3-tiny-coco.cfg` | `configs/yolov3-tiny-vehicles.cfg` |
+| `bash scripts/train_darknet.sh v4-tiny` | `weights/pretrained/yolov4-tiny-coco.cfg` | `configs/yolov4-tiny-vehicles.cfg` |
+
+Edit the training config in `configs/` to change the input size, batch, learning rate or number of iterations. The matching `-infer.cfg` is for inference and export.
+
+### 4. Train Models
+
+Each command below starts one training run. Wait for it to finish before starting the next model. All six runs reuse the dataset prepared above and save to separate output directories. Use `--resume` to continue an interrupted run.
 
 #### YOLOv3-tiny / YOLOv4-tiny (Darknet)
 
-Requires [AlexeyAB's Darknet](https://github.com/AlexeyAB/darknet) compiled with:
+Requires [AlexeyAB's Darknet](https://github.com/AlexeyAB/darknet) compiled with these settings in `darknet/Makefile`:
+
 ```makefile
 GPU=1
 CUDNN=1
 OPENCV=1
+LIBSO=1
 ```
 
-**Arch Linux / CachyOS users (I'm using Arch btw):** CUDA is installed at `/opt/cuda/` instead of `/usr/local/cuda/`.
-Edit `darknet/Makefile` and replace all occurrences of `/usr/local/cuda/` with `/opt/cuda/`:
+`OPENCV=1` enables Darknet charts; `LIBSO=1` also builds `libdarknet.so`. More build options: [darknet/README.md](darknet/README.md).
+
+**Arch Linux / CachyOS users (I'm using Arch btw):** CUDA is installed at `/opt/cuda/` instead of `/usr/local/cuda/`. Edit `darknet/Makefile` and replace all occurrences of `/usr/local/cuda/` with `/opt/cuda/`:
+
 ```makefile
 COMMON+= -DGPU -I/opt/cuda/include/
 LDFLAGS+= -L/opt/cuda/lib64 -lcuda -lcudart -lcublas -lcurand
@@ -132,27 +208,46 @@ CFLAGS+= -DCUDNN -I/opt/cuda/include
 LDFLAGS+= -L/opt/cuda/lib64 -lcudnn
 ```
 
-Also set ARCH for your GPU (e.g., RTX 3060 = Ampere, compute 8.6):
+If `nvcc` is not on your `PATH`:
+
+```bash
+export PATH="/opt/cuda/bin:$PATH"
+nvcc --version
+```
+
+Also set `ARCH` for your GPU (e.g., RTX 3060 = Ampere, compute 8.6):
+
 ```makefile
 ARCH= -gencode arch=compute_86,code=[sm_86,compute_86]
 ```
 
+For Quadro RTX 6000 (Turing, compute 7.5), use this instead:
+
+```makefile
+ARCH= -gencode arch=compute_75,code=[sm_75,compute_75]
+```
+
+> **Note:** The bundled Makefile already uses `/opt/cuda/` and the RTX 3060 setting. Adjust the CUDA/cuDNN paths and `ARCH` for your GPU and CUDA installation.
+
 <details>
 <summary><strong>CUDA 13+ compatibility fix</strong></summary>
 
-If you get `cudaHostAlloc` incompatible pointer type errors, you need to add `(void**)` casts in these files:
+If you get `cudaHostAlloc` incompatible pointer type errors, add `(void**)` casts to the first argument in these files. The casts are already present in the bundled sources; keep this reference when using another Darknet checkout.
 
 **src/network.c** (line ~660):
+
 ```c
 if (cudaSuccess == cudaHostAlloc((void**)&net->input_pinned_cpu, size * sizeof(float), cudaHostRegisterMapped))
 ```
 
 **src/parser.c** (line ~1761):
+
 ```c
 if (cudaSuccess == cudaHostAlloc((void**)&net.input_pinned_cpu, size * sizeof(float), cudaHostRegisterMapped))
 ```
 
 **src/yolo_layer.c** (lines ~67, 74, 105, 114):
+
 ```c
 if (cudaSuccess == cudaHostAlloc((void**)&l.output, ...))
 if (cudaSuccess == cudaHostAlloc((void**)&l.delta, ...))
@@ -160,565 +255,308 @@ if (cudaSuccess != cudaHostAlloc((void**)&l->output, ...))
 if (cudaSuccess != cudaHostAlloc((void**)&l->delta, ...))
 ```
 
-**src/gaussian_yolo_layer.c** (lines ~70, 77, 109, 118):
-```c
-// Same pattern as yolo_layer.c - add (void**) cast to all cudaHostAlloc calls
-```
+**src/gaussian_yolo_layer.c** (lines ~70, 77, 109, 118): same pattern as `yolo_layer.c`, add `(void**)` to all four `cudaHostAlloc` calls. The `...` above stands for the existing size and flags arguments; leave those unchanged.
 
 </details>
 
-Build Darknet:
+**Build Darknet** (from the project root):
+
 ```bash
-cd darknet
-make clean && make -j$(nproc)
+make -C darknet clean
+make -C darknet -j"$(nproc)"
 ```
 
-Install system-wide (optional):
+**Install system-wide (optional):**
+
 ```bash
-sudo cp darknet /usr/local/bin/
-sudo cp libdarknet.so /usr/local/lib/
+sudo cp darknet/darknet /usr/local/bin/
+sudo cp darknet/libdarknet.so /usr/local/lib/
 sudo ldconfig
 ```
 
-Train:
+Without system-wide installation, add the build directory to `PATH` so the training scripts can find `darknet`:
+
 ```bash
-./scripts/train_darknet.sh v3-tiny
+export PATH="$PWD/darknet:$PATH"
 ```
 
+**Train YOLOv3-tiny:**
+
 ```bash
-./scripts/train_darknet.sh v4-tiny
+bash scripts/train_darknet.sh v3-tiny
 ```
 
-#### YOLOv5n / YOLOv5s (not YOLOv5u)
-
-YOLOv5 uses a separate repository from Ultralytics (not the updated `yolov5u` / `yolov5nu` in the ultralytics package which has YOLOv8-style output format).
-
-**Setup:**
+**Then train YOLOv4-tiny:**
 
 ```bash
-git clone https://github.com/ultralytics/yolov5.git
-cd yolov5 && pip install -r requirements.txt
-cd ..
+bash scripts/train_darknet.sh v4-tiny
 ```
 
-**Train:**
+Current training settings:
+
+- `batch=64`, `subdivisions=4` - Increase subdivisions if GPU memory is insufficient
+- `max_batches=64000`, `steps=51200,57600` - Training budget and learning-rate steps
+- `letter_box=1`, `mosaic=0` - Preserve image proportions
+- `random=1` - Vary the training resolution; validation uses 416x256
+
+These are starting settings for the new dataset. Their accuracy still needs to be measured.
+
+The script uses `-clear` for new runs and `-mAP_epochs 1` for validation. With 62587 train images and batch 64, the first mAP check is at iteration 1000 (after warmup), then approximately every 977 iterations.
+
+- `*_best.weights` - Best checkpoint on validation
+- `*_final.weights` - Last training state
+- Test images are not used for training or checkpoint selection
+
+**Resume:**
 
 ```bash
-# YOLOv5n
-python scripts/train_yolov5.py --model v5n --epochs 100
+bash scripts/train_darknet.sh v3-tiny --resume \
+  weights/yolov3-tiny-vehicles/yolov3-tiny-vehicles_last.weights
+```
 
-# YOLOv5s
-python scripts/train_yolov5.py --model v5s --epochs 100
+> **Note on resume:** Darknet resets its best-mAP counter on each launch. The script keeps a copy of the previous best as `*best-before-resume*.weights`. Compare it with the new best on the same validation split.
 
-# Train from scratch
-python scripts/train_yolov5.py --model v5n --epochs 100 --scratch
+#### YOLOv5nu / YOLOv8n / YOLOv9t / YOLO11n (Ultralytics)
+
+The same script trains and exports all four models. YOLOv5nu uses the updated [Ultralytics YOLOv5u head](https://docs.ultralytics.com/models/yolov5/). All four models use the installed `ultralytics` package. Run them one at a time:
+
+**YOLOv5nu:**
+
+```bash
+python3 scripts/train_ultralytics.py --model v5nu --epochs 100 --batch 16
+```
+
+**YOLOv8n:**
+
+```bash
+python3 scripts/train_ultralytics.py --model v8n --epochs 100 --batch 16
+```
+
+**YOLOv9t:**
+
+```bash
+python3 scripts/train_ultralytics.py --model v9t --epochs 100 --batch 16
+```
+
+**YOLO11n:**
+
+```bash
+python3 scripts/train_ultralytics.py --model v11n --epochs 100 --batch 16
 ```
 
 Options:
-- `--model v5n|v5s|v5m` - Model variant (default: v5n)
-- `--batch 16` - Batch size
-- `--scratch` - Train from scratch (no pretrained weights)
-- `--yolov5-dir path` - Custom YOLOv5 repo path
 
-Output weights are saved to `weights/yolov5n-vehicles/weights/best.pt`.
-
-#### YOLOv8n / YOLOv9t / YOLOv11n (Ultralytics)
-
-The unified training script supports all Ultralytics models:
-
-```bash
-# YOLOv8n (default)
-python scripts/train_ultralytics.py --model v8n --epochs 100
-
-# YOLOv9t (tiny - smallest, ~2.0M params)
-python scripts/train_ultralytics.py --model v9t --epochs 100
-
-# YOLOv11n (nano - ~2.6M params)
-python scripts/train_ultralytics.py --model v11n --epochs 100
-```
-
-Options:
-- `--model v8n|v9t|v11n` - Model variant (default: v8n)
+- `--model v5nu|v5su|v5mu|v8n|v9t|v11n` - Model variant (default: v8n)
 - `--batch 16` - Adjust batch size for your GPU
 - `--device 0` - CUDA device ID
-- `--scratch` - Train from scratch (recommended for custom datasets)
+- `--scratch` - Train without pretrained weights
 
-Output weights are saved to `weights/<model>-vehicles/weights/best.pt` and automatically exported to ONNX.
+For larger YOLOv5u variants, download `--model v5su` or `v5mu` and pass the same model name to the training script. For `--scratch`, the script selects the matching Ultralytics YAML (`yolov5n.yaml`, `yolov5s.yaml`, or `yolov5m.yaml`); these config filenames omit the checkpoint suffix `u`.
 
-## Inference (Testing Detection)
+The Ultralytics training script uses COCO weights, `seed=42`, `rect=True`, `imgsz=416`, and `patience=20`. Training stops after 20 epochs without improvement.
 
-### YOLOv3-tiny / YOLOv4-tiny (Darknet)
+Output weights are saved to `weights/<model>-vehicles/weights/best.pt` and automatically exported to ONNX: float32 `[1,3,256,416]`, batch 1, opset 12, no embedded NMS. See [Ultralytics export](https://docs.ultralytics.com/modes/export/).
 
-```bash
-darknet detector test data/vehicles.data \
-    configs/yolov3-tiny-vehicles-infer.cfg \
-    weights/yolov3-tiny-vehicles_best.weights \
-    path/to/image.jpg
-```
+> **Note on NMS:** In the pinned Ultralytics 8.4.153, `nms=None` exports for external NMS. `nms=False` selects the NMS-free branch where available. The wrapper handles this. See the [version's settings](https://github.com/ultralytics/ultralytics/blob/v8.4.153/ultralytics/cfg/default.yaml).
 
-Save output to file instead of displaying:
+**Resume Ultralytics:**
 
 ```bash
-darknet detector test data/vehicles.data \
-    configs/yolov3-tiny-vehicles-infer.cfg \
-    weights/yolov3-tiny-vehicles_best.weights \
-    path/to/image.jpg \
-    -dont_show -out_filename predictions.jpg
+python3 scripts/train_ultralytics.py --resume weights/yolo11n-vehicles/weights/last.pt
 ```
 
-### YOLOv8n / YOLOv9t / YOLOv11n (Ultralytics)
+### 5. Export Darknet Models to ONNX
+
+After the two Darknet runs finish, convert the weights with [darknet2onnx](https://github.com/LdDl/darknet2onnx). Run from the project root with `darknet2onnx` installed:
 
 ```bash
-# YOLOv8n
-yolo detect predict model=weights/yolov8n-vehicles/weights/best.pt source=path/to/image.jpg
+darknet2onnx --format yolov8 \
+  --cfg weights/yolov3-tiny-vehicles/yolov3-tiny-vehicles-infer.cfg \
+  --weights weights/yolov3-tiny-vehicles/yolov3-tiny-vehicles_best.weights \
+  --output weights/yolov3-tiny-vehicles/yolov3-tiny-vehicles_best.onnx
 
-# YOLOv9t
-yolo detect predict model=weights/yolov9t-vehicles/weights/best.pt source=path/to/image.jpg
-
-# YOLOv11n
-yolo detect predict model=weights/yolov11n-vehicles/weights/best.pt source=path/to/image.jpg
+darknet2onnx --format yolov8 \
+  --cfg weights/yolov4-tiny-vehicles/yolov4-tiny-vehicles-infer.cfg \
+  --weights weights/yolov4-tiny-vehicles/yolov4-tiny-vehicles_best.weights \
+  --output weights/yolov4-tiny-vehicles/yolov4-tiny-vehicles_best.onnx
 ```
 
-Results are saved to `runs/detect/predict/` by default.
+Each command uses the inference config saved with its training run. Run the corresponding command when that model finishes training. `--format yolov8` changes the output layout; the networks remain YOLOv3-tiny and YOLOv4-tiny.
+
+YOLOv5nu, YOLOv8n, YOLOv9t, and YOLO11n already have `best.onnx` from the training script. All six ONNX files use float32 input `[1,3,256,416]`, batch 1, and output `[1,8,N]` for my four classes. NMS runs in the Rust detector.
+
+## Output Files
+
+| Model | Best weights | ONNX for the Rust benchmark |
+| :--- | :--- | :--- |
+| YOLOv3-tiny | `weights/yolov3-tiny-vehicles/yolov3-tiny-vehicles_best.weights` | `yolov3-tiny-vehicles_best.onnx` in the same directory |
+| YOLOv4-tiny | `weights/yolov4-tiny-vehicles/yolov4-tiny-vehicles_best.weights` | `yolov4-tiny-vehicles_best.onnx` in the same directory |
+| YOLOv5nu | `weights/yolov5nu-vehicles/weights/best.pt` | `best.onnx` in the same directory |
+| YOLOv8n | `weights/yolov8n-vehicles/weights/best.pt` | `best.onnx` in the same directory |
+| YOLOv9t | `weights/yolov9t-vehicles/weights/best.pt` | `best.onnx` in the same directory |
+| YOLO11n | `weights/yolo11n-vehicles/weights/best.pt` | `best.onnx` in the same directory |
+
+Darknet also saves train/infer configs in the run directory. Keep them together with the matching weights.
+
+### Files for Benchmarking
+
+After all planned runs finish, keep:
+
+- The six model directories from `weights/`, including ONNX, original `.weights`/`.pt`, saved CFG files, and training reports. `weights/pretrained/` is not needed for benchmarking.
+- `datasets/vehicles/merged/images/val` and `labels/val`, plus `images/test` and `labels/test` for the final evaluation. Keep the original evaluation split, including empty TXT files.
+- The merged dataset's `data.yaml`, `summary.json`, and metadata for reference.
+
+Preserve the relative paths shown above, or adjust the benchmark arguments. The Rust benchmark reads the image and label directories directly, so it does not need the generated training paths from `data/generated/`. A speed-only run needs just the ONNX files and one image; mAP also needs evaluation images and labels.
 
 ## Benchmarking
 
-The benchmark uses [od_opencv](https://crates.io/crates/od_opencv) Rust crate for realistic deployment performance on edge devices like Jetson Nano. It measures both **FPS** and **mAP@0.50** using Pascal VOC 11-point interpolation.
+Run this section after training and export. The Rust benchmark uses **od_opencv 0.8.2 / ONNX Runtime** for all six models, with 416x256 input and the same thresholds. OpenCV is not required. Keep each model at the path listed above and run commands from the project root.
 
 ### Build Benchmark
 
+**CPU:**
+
 ```bash
-cd benchmark
-cargo build --release
+cargo build --release --manifest-path benchmark/Cargo.toml
 ```
+
+**CUDA 12 / cuDNN 9:**
+
+```bash
+ORT_CUDA_VERSION=12 cargo build --release \
+  --manifest-path benchmark/Cargo.toml \
+  --no-default-features --features ort-cuda
+```
+
+Keep the CUDA provider libraries alongside the executable. Runtime setup and Jetson Nano compatibility: [benchmark/README.md](benchmark/README.md#build).
+
+For CUDA 13, unsupported GPU kernels, or system runtime linking, see the optional [CUDA troubleshooting](benchmark/README.md#cuda-troubleshooting) section. The commands below assume the runtime libraries are available without additional overrides.
 
 ### Run Benchmark
 
-**Speed + mAP evaluation (recommended):**
-```bash
-./target/release/benchmark \
-    --detailed \
-    --val-images ../aic_hcmc2020/images/val \
-    --val-labels ../aic_hcmc2020/labels/val \
-    --v3-weights ../weights/yolov3-tiny-vehicles_best.weights \
-    --v3-cfg ../configs/yolov3-tiny-vehicles-infer.cfg
-```
-
-**With CUDA acceleration:**
-```bash
-./target/release/benchmark \
-    --cuda \
-    --detailed \
-    --val-images ../aic_hcmc2020/images/val \
-    --val-labels ../aic_hcmc2020/labels/val \
-    --v3-weights ../weights/yolov3-tiny-vehicles_best.weights \
-    --v3-cfg ../configs/yolov3-tiny-vehicles-infer.cfg
-```
-
-**Compare multiple models:**
-```bash
-./target/release/benchmark \
-    --detailed \
-    --cuda \
-    --val-images ../aic_hcmc2020/images/val \
-    --val-labels ../aic_hcmc2020/labels/val \
-    --v3-weights ../weights/yolov3-tiny-vehicles_best.weights \
-    --v3-cfg ../configs/yolov3-tiny-vehicles-infer.cfg \
-    --v4-weights ../weights/yolov4-tiny-vehicles_final.weights \
-    --v4-cfg ../configs/yolov4-tiny-vehicles-infer.cfg \
-    --v8-onnx ../weights/yolov8n-vehicles/weights/best.onnx \
-    --v9-onnx ../weights/yolov9t-vehicles/weights/best.onnx \
-    --v11-onnx ../weights/yolov11n-vehicles/weights/best.onnx
-```
-
-**Single image speed test:**
-```bash
-./target/release/benchmark \
-    --image ../aic_hcmc2020/images/val/cam_01_000001.jpg \
-    --iterations 100 \
-    --warmup 10 \
-    --v3-weights ../weights/yolov3-tiny-vehicles_best.weights \
-    --v3-cfg ../configs/yolov3-tiny-vehicles-infer.cfg
-```
-
-Options:
-- `--cuda` - Use CUDA backend (requires OpenCV with CUDA)
-- `--val-images` / `--val-labels` - Validation set for mAP calculation
-- `--max-images N` - Limit images for faster testing
-- `--image` - Single image for dedicated speed benchmark
-- `--iterations N` - Number of speed benchmark iterations
-- `--warmup N` - Warmup iterations before benchmarking
-- `--v9-onnx` - Path to YOLOv9t ONNX model
-- `--v11-onnx` - Path to YOLOv11n ONNX model
-
-### Example Output
-
-```
-Comparison (416x256, CUDA):
----------------------------------------------------------------------------
-Model              Mean (ms)          FPS     mAP@0.50 Relative FPS
----------------------------------------------------------------------------
-YOLOv3-tiny             4.69       213.10       69.96%        1.00x
-YOLOv4-tiny             4.95       202.04       63.52%        0.95x
-YOLOv8n                 5.84       171.13       65.27%        0.80x
-YOLOv11n                8.07       123.89       71.71%        0.58x
-YOLOv9t                14.30        69.94       74.04%        0.33x
----------------------------------------------------------------------------
-```
-
-## Benchmark Results
-
-### Speed Comparison (416x256)
-
-| Model | Backend | Mean (ms) | Min (ms) | FPS |
-|-------|---------|-----------|----------|-----|
-| YOLOv3-tiny | CUDA (RTX 3060) | 4.69 | 2.15 | 213.10 |
-| YOLOv4-tiny | CUDA (RTX 3060) | 4.95 | 2.41 | 202.04 |
-| YOLOv8n | CUDA (RTX 3060) | 5.84 | 5.30 | 171.13 |
-| YOLOv5n | CUDA (RTX 3060) | 6.89 | 6.13 | 145.09 |
-| YOLOv11n | CUDA (RTX 3060) | 8.07 | 7.56 | 123.89 |
-| YOLOv9t | CUDA (RTX 3060) | 14.30 | 13.54 | 69.94 |
-
-### mAP Comparison (416x256, IoU=0.50)
-
-| Model | mAP@0.50 | car | motorbike | bus | truck |
-|-------|----------|-----|-----------|-----|-------|
-| YOLOv9t | **74.04%** | 79.51% | 74.12% | 68.23% | 74.30% |
-| YOLOv11n | 71.71% | 77.89% | 72.63% | 63.55% | 72.76% |
-| YOLOv3-tiny | 69.96% | 76.68% | 68.11% | 66.19% | 68.88% |
-| YOLOv5n | 65.48% | 69.48% | 70.97% | 52.26% | 69.20% |
-| YOLOv8n | 65.27% | 69.06% | 70.82% | 51.94% | 69.25% |
-| YOLOv4-tiny | 63.52% | 61.95% | 44.58% | 69.41% | 78.13% |
-
-> **Note:** mAP calculated using Pascal VOC 11-point interpolation. Darknet reports higher values (~80%) using all-point interpolation (COCO style). Results may vary slightly (~0.2%) between runs due to GPU floating-point non-determinism.
-
-### F1 Score Comparison (416x256, IoU=0.50)
-
-| Model | Micro F1 | Macro F1 | Precision | Recall |
-|-------|----------|----------|-----------|--------|
-| YOLOv9t | **83.57%** | **83.12%** | 85.94% | 81.34% |
-| YOLOv11n | 83.48% | 82.89% | 86.12% | 80.98% |
-| YOLOv8n | 82.19% | 81.74% | 87.25% | 77.68% |
-| YOLOv5n | 81.55% | 81.95% | 84.08% | 79.18% |
-| YOLOv3-tiny | 78.53% | 80.20% | 79.81% | 77.29% |
-| YOLOv4-tiny | 67.33% | 77.00% | 89.73% | 53.88% |
-
-**Per-class F1 Scores:**
-
-| Model | car | motorbike | bus | truck |
-|-------|-----|-----------|-----|-------|
-| YOLOv9t | **84.21%** | **83.45%** | 82.18% | 82.64% |
-| YOLOv11n | 83.89% | 83.28% | 81.42% | 82.98% |
-| YOLOv8n | 82.78% | 82.16% | 80.35% | 81.69% |
-| YOLOv5n | 82.86% | 81.22% | 82.46% | 81.25% |
-| YOLOv3-tiny | 80.77% | 77.52% | 81.15% | 81.37% |
-| YOLOv4-tiny | 77.79% | 60.74% | **85.13%** | **84.35%** |
-
-> **Key insight:** YOLOv9t achieves the best mAP (74.04%) and F1 score (83.57%) but is the slowest at 70 FPS. YOLOv11n offers the best accuracy-speed balance with 71.71% mAP at 124 FPS. YOLOv5n performs similarly to YOLOv8n (65.48% vs 65.27% mAP) at 145 FPS. YOLOv3-tiny remains the fastest at 213 FPS with competitive 70% mAP.
-
-### Confusion Matrices
-
-<details>
-<summary><strong>YOLOv3-tiny Confusion Matrix</strong></summary>
-
-```
- Actual\Pred       car motorbike       bus     truck        BG
---------------------------------------------------------------
-         car      5621        53        19        47      1204
-   motorbike        45     20364         .        12      6676
-         bus       101         .       921        61       169
-       truck       105        25        66      2322       539
-          BG      1222      5058       174       404         .
-```
-
-</details>
-
-<details>
-<summary><strong>YOLOv4-tiny Confusion Matrix</strong></summary>
-
-```
- Actual\Pred       car motorbike       bus     truck        BG
---------------------------------------------------------------
-         car      4731        13        16        32      2152
-   motorbike        32     12336         .        12     14717
-         bus        43         .       973        53       183
-       truck        49         7        28      2469       504
-          BG       425      1210       113       315         .
-```
-
-Note: YOLOv4-tiny misses 14,717 motorbikes (54% FN rate), explaining its low recall.
-
-</details>
-
-<details>
-<summary><strong>YOLOv5n Confusion Matrix</strong></summary>
-
-```
- Actual\Pred       car motorbike       bus     truck        BG
---------------------------------------------------------------
-         car      5529        32        18        46      1319
-   motorbike        47     21246         .        14      5790
-         bus       133         .       743       161       215
-       truck       103        25        37      2358       534
-          BG       686      3976        46       333         .
-```
-
-</details>
-
-<details>
-<summary><strong>YOLOv8n Confusion Matrix</strong></summary>
-
-```
- Actual\Pred       car motorbike       bus     truck        BG
---------------------------------------------------------------
-         car      5501        27        18        45      1353
-   motorbike        49     20752         .        13      6283
-         bus       125         .       734       157       236
-       truck        93        26        39      2342       557
-          BG       669      2679        66       278         .
-```
-
-</details>
-
-<details>
-<summary><strong>YOLOv9t Confusion Matrix</strong></summary>
-
-```
- Actual\Pred       car motorbike       bus     truck        BG
---------------------------------------------------------------
-         car      5712        31        15        38      1148
-   motorbike        42     21456         .        11      5588
-         bus        98         .       812       128       214
-       truck        78        19        32      2498       430
-          BG       612      2245        58       241         .
-```
-
-Note: YOLOv9t achieves the best mAP (74.04%) with balanced precision and recall across all classes.
-
-</details>
-
-<details>
-<summary><strong>YOLOv11n Confusion Matrix</strong></summary>
-
-```
- Actual\Pred       car motorbike       bus     truck        BG
---------------------------------------------------------------
-         car      5634        28        17        41      1224
-   motorbike        46     21189         .        12      5850
-         bus       112         .       768       142       230
-       truck        85        22        35      2421       494
-          BG       645      2398        62       259         .
-```
-
-Note: YOLOv11n offers the best speed-accuracy trade-off at 124 FPS with 71.71% mAP.
-
-</details>
-
-## Model Comparison
-
-| Model | Parameters | Format | Input Size |
-|-------|------------|--------|------------|
-| YOLOv3-tiny | ~8.7M | .cfg + .weights | 416x256 |
-| YOLOv4-tiny | ~6M | .cfg + .weights | 416x256 |
-| YOLOv5n | ~1.9M | .pt / .onnx | 416x256 |
-| YOLOv5s | ~7.2M | .pt / .onnx | 416x256 |
-| YOLOv8n | ~3.2M | .onnx | 416x256 |
-| YOLOv9t | ~2.0M | .onnx | 416x256 |
-| YOLOv11n | ~2.6M | .onnx | 416x256 |
-
-## Deployment to Jetson Nano
-
-For Jetson Nano deployment using Rust:
-
-1. Cross-compile the benchmark or build on device
-2. Use `--cuda` flag for GPU acceleration
-3. OpenCV must be compiled with CUDA support
-
-Example with od_opencv in your Rust project:
-
-```rust
-// Darknet models (v3-tiny, v4-tiny)
-use od_opencv::model_classic::ModelYOLOClassic;
-use opencv::dnn::{DNN_BACKEND_CUDA, DNN_TARGET_CUDA};
-
-let model = ModelYOLOClassic::new_from_darknet_file(
-    "weights/yolov4-tiny-vehicles.weights",
-    "configs/yolov4-tiny-vehicles.cfg",
-    (416, 256),
-    DNN_BACKEND_CUDA,
-    DNN_TARGET_CUDA,
-    vec![],
-)?;
-```
-
-```rust
-// Ultralytics ONNX models (v8n, v9t, v11n)
-use od_opencv::model_ultralytics::ModelUltralyticsV8;
-use opencv::dnn::{DNN_BACKEND_CUDA, DNN_TARGET_CUDA};
-
-let model = ModelUltralyticsV8::new_from_onnx_file(
-    "weights/yolov9t-vehicles/weights/best.onnx",
-    (416, 256),
-    DNN_BACKEND_CUDA,
-    DNN_TARGET_CUDA,
-    vec![],
-)?;
-```
-
-## Improving Smaller Models (Distillation)
-
-You can improve tiny/nano model performance by using a larger "teacher" model to generate pseudo-labels on unlabeled video data. This is a form of knowledge distillation.
-
-### How It Works
-
-1. **Collect video footage** - Traffic cameras, dashcams, or any vehicle footage
-2. **Extract frames** - Sample every Nth frame to avoid redundancy
-3. **Auto-annotate** - Run YOLOv8-large to detect vehicles with high confidence
-4. **Train** - Add pseudo-labeled data to your training set
-
-### Get Teacher Model
-
-The script uses YOLOv8-large by default. Ultralytics auto-downloads it on first run, or you can download manually:
+Open Bash in the project root and run this setup once before the examples below. Use the same terminal for each command; change `dataset_dir` if your dataset is elsewhere:
 
 ```bash
-wget https://github.com/ultralytics/assets/releases/download/v8.3.0/yolov8l.pt -O weights/yolov8l.pt
+set -o pipefail
+mkdir -p benchmark-results
+dataset_dir="$PWD/datasets/vehicles/merged"
+split=val
+sample_image="$(python3 -c 'from pathlib import Path; import sys; print(sorted(Path(sys.argv[1]).glob("*.jpg"))[0])' "$dataset_dir/images/val")"
+printf '%s\n' "$sample_image" > benchmark-results/speed-image.txt
 ```
 
-### Generate Pseudo-Labels
+### Speed + mAP evaluation (recommended)
 
-**From existing images:**
+For one model on CPU, measure speed on the fixed image and mAP on the full selected split:
 
 ```bash
-python scripts/distill_annotations.py \
-    --image-dir path/to/images/ \
-    --teacher weights/yolov8l.pt \
-    --confidence 0.6
+benchmark/target/release/benchmark \
+  --image "$sample_image" --iterations 1000 --warmup 50 \
+  --val-images "$dataset_dir/images/$split" \
+  --val-labels "$dataset_dir/labels/$split" \
+  --max-images 0 --detailed \
+  --v3-onnx weights/yolov3-tiny-vehicles/yolov3-tiny-vehicles_best.onnx \
+  2>&1 | tee "benchmark-results/$split-v3-cpu.log"
 ```
 
-**From videos (extracts frames):**
+When both `--image` and `--val-images` are supplied, FPS comes from the warmed-up speed run on that image, while mAP comes from the entire selected split.
+
+### With CUDA acceleration
+
+Use the CUDA build above and add `--cuda`:
 
 ```bash
-python scripts/distill_annotations.py \
-    --video-dir path/to/videos/ \
-    --teacher weights/yolov8l.pt \
-    --confidence 0.6 \
-    --frame-step 10
+benchmark/target/release/benchmark \
+  --cuda \
+  --image "$sample_image" --iterations 1000 --warmup 50 \
+  --val-images "$dataset_dir/images/$split" \
+  --val-labels "$dataset_dir/labels/$split" \
+  --max-images 0 --detailed \
+  --v3-onnx weights/yolov3-tiny-vehicles/yolov3-tiny-vehicles_best.onnx \
+  2>&1 | tee "benchmark-results/$split-v3-cuda.log"
 ```
 
-The script automatically maps COCO classes to vehicle classes:
-- `car` (COCO 2) → `car` (0)
-- `motorcycle` (COCO 3) → `motorbike` (1)
-- `bus` (COCO 5) → `bus` (2)
-- `truck` (COCO 7) → `truck` (3)
+### Compare multiple models
 
-**Using fine-tuned teacher model:**
-
-For better annotations, first fine-tune YOLOv8l on your labeled data:
+Pass all six ONNX paths in one command. The program loads and benchmarks each model sequentially, then prints a comparison table:
 
 ```bash
-yolo detect train model=yolov8l.pt data=data/vehicles.yaml epochs=50 imgsz=640
+benchmark/target/release/benchmark \
+  --cuda \
+  --image "$sample_image" --iterations 1000 --warmup 50 \
+  --val-images "$dataset_dir/images/$split" \
+  --val-labels "$dataset_dir/labels/$split" \
+  --max-images 0 --detailed \
+  --v3-onnx weights/yolov3-tiny-vehicles/yolov3-tiny-vehicles_best.onnx \
+  --v4-onnx weights/yolov4-tiny-vehicles/yolov4-tiny-vehicles_best.onnx \
+  --v5-onnx weights/yolov5nu-vehicles/weights/best.onnx \
+  --v8-onnx weights/yolov8n-vehicles/weights/best.onnx \
+  --v9-onnx weights/yolov9t-vehicles/weights/best.onnx \
+  --v11-onnx weights/yolo11n-vehicles/weights/best.onnx \
+  2>&1 | tee "benchmark-results/$split-cuda.log"
 ```
 
-Then use it as teacher:
+For CPU comparison, remove `--cuda` and save to `$split-cpu.log`. If only some models are ready, pass only their model arguments.
+
+For a quick check, use `--max-images 100`. This selects the first 100 filenames, not a representative random sample. Use `--max-images 0` for reported results.
+
+After model selection on validation, set `split=test` and repeat the comparison command. This changes both image and label directories and writes `test-cuda.log`. Keep the same `sample_image` for comparable speed measurements. Test data is not used to tune models or thresholds.
+
+For speed-only runs, evaluator details, and the list of results to save, see [benchmark/README.md](benchmark/README.md).
+
+**Native Darknet mAP check (optional):**
 
 ```bash
-python scripts/distill_annotations.py \
-    --video-dir path/to/videos/ \
-    --teacher runs/detect/train/weights/best.pt \
-    --no-coco-mapping \
-    --confidence 0.5
+darknet detector map data/generated/vehicles.data \
+  configs/yolov3-tiny-vehicles-infer.cfg \
+  weights/yolov3-tiny-vehicles/yolov3-tiny-vehicles_best.weights -points 0
 ```
 
-### Options
+Use validation for tuning. For the final test, replace `data/generated/vehicles.data` with `data/generated/vehicles-test.data`. Evaluate selected models on test once the settings are fixed.
 
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--image-dir` | - | Directory with images (.jpg, .png) |
-| `--video` | - | Single video file |
-| `--video-dir` | - | Directory with videos (.mp4, .avi) |
-| `--output` | `distilled_data` | Output directory for labels |
-| `--teacher` | `yolov8l.pt` | Teacher model path |
-| `--confidence` | `0.5` | Min confidence to keep detection |
-| `--frame-step` | `10` | Extract every Nth frame (videos only) |
-| `--copy-images` | false | Copy images to output dir |
-| `--no-coco-mapping` | false | Use direct class IDs (custom teacher) |
-| `--val-split` | `0.0` | Fraction for validation (e.g., 0.1 = 10%). Creates train/val subdirs |
+> **Note:** The Rust benchmark uses Pascal VOC 11-point interpolation after filtering at confidence 0.25. Its mAP is not directly interchangeable with Darknet `-points 0` or Ultralytics mAP. Use the same evaluator, split, and thresholds when comparing models.
 
-### Tips
+## Benchmark results
 
-- **Higher confidence = cleaner labels** - Use 0.5-0.7 to avoid teacher errors
-- **Diverse footage helps** - Different cameras, angles, weather conditions
-- **Review samples** - Spot-check annotations before large training runs
-- **Mix with original data** - Don't replace labeled data, augment it
+Validation results on **Junction + MIO-TCD**, measured for all six models in one run on 2026-10-01. Test-set results are not available yet.
 
-### Merge with Training Data
+| Model | mAP@0.50 | Mean time (ms) | FPS |
+| :--- | ---: | ---: | ---: |
+| YOLOv3-tiny | 75.61% | 2.21 | 453.01 |
+| YOLOv4-tiny | 75.78% | **2.12** | **470.78** |
+| YOLOv5nu | 82.88% | 2.21 | 452.47 |
+| YOLOv8n | 82.74% | 2.32 | 430.85 |
+| YOLOv9t | 82.88% | 3.94 | 254.12 |
+| YOLO11n | **84.70%** | 2.50 | 399.78 |
 
-**Important:** Distilled data is already in the correct class format (0=car, 1=motorbike, 2=bus, 3=truck). Do **NOT** run `prepare_dataset.py` on distilled data - it would incorrectly remap classes.
+**Per-class AP@0.50:**
 
-**Recommended workflow:**
+| Model | Car | Motorbike | Bus | Truck |
+| :--- | ---: | ---: | ---: | ---: |
+| YOLOv3-tiny | 80.33% | 60.88% | 90.27% | 70.95% |
+| YOLOv4-tiny | 72.05% | 60.83% | 90.63% | 79.63% |
+| YOLOv5nu | 89.50% | 71.21% | 90.61% | 80.21% |
+| YOLOv8n | 89.50% | 70.64% | 90.57% | 80.27% |
+| YOLOv9t | 89.55% | 70.89% | 90.67% | 80.39% |
+| YOLO11n | 89.52% | 79.06% | 90.17% | 80.06% |
 
-1. First, prepare the original AIC HCMC dataset (applies class remapping):
-   ```bash
-   python scripts/prepare_dataset.py --dataset-dir ./aic_hcmc2020
-   ```
+**Measurement setup:**
 
-2. Then add distilled data directly (no remapping needed):
-   ```bash
-   # Copy to train
-   cp distilled_data/images/*.jpg aic_hcmc2020/images/train/
-   cp distilled_data/labels/*.txt aic_hcmc2020/images/train/
-   ```
+- NVIDIA GeForce RTX 5060 Ti, AMD Ryzen 7 7800X3D, ONNX Runtime 1.29.0 / CUDA (system build).
+- Float32 ONNX input, batch 1, 416x256 with letterbox. Confidence 0.25, NMS IoU 0.45, evaluation IoU 0.50.
+- Accuracy: all 7456 validation images, AP with 11-point interpolation after confidence filtering. These values are not directly interchangeable with Darknet or Ultralytics mAP.
+- Speed: 50 warmup calls and 1000 timed calls on `images/val/00_1112-5923_frame_007783_1.jpg` (800x450). Timing includes preprocessing, inference and postprocessing, excluding image loading from disk.
+- System runtime linked through `ORT_LIB_PATH=/usr/lib` and `ORT_PREFER_DYNAMIC_LINK=1`; cuDNN preloaded with `LD_PRELOAD=/usr/lib/libcudnn.so.9`. See [CUDA troubleshooting](benchmark/README.md#cuda-troubleshooting).
 
-3. Regenerate file lists for Darknet (must include all files):
-   ```bash
-   find $(pwd)/aic_hcmc2020/images/train -name "*.jpg" > train_aic_hcmc.txt
-   find $(pwd)/aic_hcmc2020/images/val -name "*.jpg" > val_aic_hcmc.txt
-   ```
+FPS is measured on this GPU and fixed image, not on Jetson Nano or an entire video pipeline. Small differences between models need repeated measurements before drawing conclusions. The validation set contains only 89 motorbike objects, so that class has fewer evaluation examples than the others.
 
-   > **Note:** Darknet expects these file names as configured in `data/vehicles.data`.
-
-**With train/val split** (using `--val-split`):
+## Tests
 
 ```bash
-python scripts/distill_annotations.py \
-    --image-dir path/to/images/ \
-    --teacher weights/yolov8l.pt \
-    --confidence 0.6 \
-    --val-split 0.1
-
-# Output structure:
-# distilled_data/train/images/
-# distilled_data/train/labels/
-# distilled_data/val/images/
-# distilled_data/val/labels/
+python3 -m unittest discover -s tests -p 'test_*.py' -v
+python3 scripts/prepare_dataset.py --help
+python3 scripts/train_ultralytics.py --help
+bash -n scripts/train_darknet.sh scripts/generate_file_lists.sh scripts/create_videos.sh
 ```
 
-Then merge both train and val:
-
-```bash
-cp distilled_data/train/images/*.jpg aic_hcmc2020/images/train/
-cp distilled_data/train/labels/*.txt aic_hcmc2020/images/train/
-cp distilled_data/val/images/*.jpg aic_hcmc2020/images/val/
-cp distilled_data/val/labels/*.txt aic_hcmc2020/images/val/
-
-# Regenerate file lists for Darknet
-find $(pwd)/aic_hcmc2020/images/train -name "*.jpg" > train_aic_hcmc.txt
-find $(pwd)/aic_hcmc2020/images/val -name "*.jpg" > val_aic_hcmc.txt
-```
-
-**Verify class distribution after merge:**
-
-```bash
-awk '{print $1}' aic_hcmc2020/images/train/*.txt | sort | uniq -c
-# Expected: 0 (car) should be the majority, not 2 (bus)
-```
-
-## Legacy Files
-
-Old configuration files are kept for reference:
-- `vehicles.cfg` - Original YOLOv3-tiny at 352x256
-- `vehicles_v4.cfg` - Original YOLOv4-tiny at 384x384
-
-## License
-
-MIT
+Tests use small synthetic datasets and mocked training calls. No training or dataset downloads are started.

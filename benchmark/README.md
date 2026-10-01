@@ -6,6 +6,7 @@ Compare YOLOv3-tiny, YOLOv4-tiny, YOLOv5nu, YOLOv8n, YOLOv9t, and YOLO11n throug
 
 - [Before benchmarking](#before-benchmarking)
 - [Build](#build)
+- [CUDA troubleshooting](#cuda-troubleshooting)
 - [Darknet to ONNX](#darknet-to-onnx)
 - [Run benchmark](#run-benchmark)
   - [Speed + mAP evaluation (recommended)](#speed--map-evaluation-recommended)
@@ -24,7 +25,7 @@ Keep the model directories under `weights/` and the original evaluation images a
 
 ## Build
 
-Requires Rust 1.91+ and a C/C++ linker. The `ort` dependency is pinned to `2.0.0-rc.12` (ONNX Runtime 1.24). A standard build downloads a prebuilt runtime for the platform through `ort-sys`. The Rust `image` crate reads images; `od_opencv` handles preprocessing and NMS.
+Requires Rust 1.91+ and a C/C++ linker. The `ort` dependency is pinned to `2.0.0-rc.12`; its default prebuilt runtime is ONNX Runtime 1.24.2. A standard build downloads that runtime for the platform through `ort-sys`. A compatible system runtime can also be used, as described below. The Rust `image` crate reads images; `od_opencv` handles preprocessing and NMS.
 
 From the project root, for CPU:
 
@@ -44,6 +45,30 @@ ORT_CUDA_VERSION=12 cargo build --release \
 Run the binary at `benchmark/target/release/`. Keep the `libonnxruntime_providers_*.so` libraries produced by the CUDA build alongside it. When moving the binary, include these libraries from the same build. If they are symlinks into the Cargo cache, copy the file contents with `cp -L`. CUDA and cuDNN must be available to the system loader. With `--cuda`, a failed CUDA provider registration stops the program with an error, preventing a silent fallback to CPU.
 
 > **Note:** This CUDA build targets CUDA 12 and cuDNN 9. The standard JetPack for Jetson Nano with CUDA 10.2 cannot run it. Use a runtime compatible with the device. See [ONNX Runtime CUDA compatibility](https://onnxruntime.ai/docs/execution-providers/CUDA-ExecutionProvider.html).
+
+## CUDA troubleshooting
+
+<details>
+<summary>Optional: CUDA versions, GPU support and system libraries</summary>
+
+If a CUDA 12 library such as `libcublasLt.so.12` is missing and your installation uses CUDA 13, change `ORT_CUDA_VERSION=12` to `ORT_CUDA_VERSION=13` in the build command. The runtime must also contain kernels for your GPU: `cudaErrorNoKernelImageForDevice` can occur even when the CUDA version matches. For example, the bundled CUDA 13 runtime was missing support for an RTX 5060 Ti (`sm_120`).
+
+To use an installed, compatible system ONNX Runtime instead of the bundled runtime, rebuild with its library directory. On Arch Linux / CachyOS, with a suitable `onnxruntime-cuda` package installed:
+
+```bash
+ORT_LIB_PATH=/usr/lib ORT_PREFER_DYNAMIC_LINK=1 \
+  cargo build --release \
+  --manifest-path benchmark/Cargo.toml \
+  --no-default-features --features ort-cuda
+
+ldd benchmark/target/release/benchmark | grep onnxruntime
+```
+
+The resolved library should be `/usr/lib/libonnxruntime.so.1`. If a different copy is selected, set `LD_LIBRARY_PATH=/usr/lib` for the benchmark process. Keep the runtime and its provider libraries from the same installation; rebuilding without the system-library settings switches back to the default runtime.
+
+If the provider reports `undefined symbol: cudnnGetConvolutionBackwardDataAlgorithm_v7`, first check the installed cuDNN. When the symbol exists in `/usr/lib/libcudnn.so.9` but the provider does not load that library, prefix the benchmark command with `LD_PRELOAD=/usr/lib/libcudnn.so.9`. This workaround applies only to that launch and is not required for normal builds. Record the runtime and any such overrides with your results.
+
+</details>
 
 ## Darknet to ONNX
 
@@ -163,6 +188,8 @@ Use the multiple-model command with the `--image ... --iterations ... --warmup .
 ## Reading AP results
 
 `metrics.rs` uses 11-point interpolation and averages AP over classes present in the selected split's ground truth. Detections are filtered at confidence 0.25 before evaluation. The reported `mAP@0.50` therefore refers to this evaluator configuration. It is not directly interchangeable with Darknet `-points 0`, Ultralytics `mAP50`, or `mAP50-95`.
+
+AP and precision/recall match detections to ground truth within each class. A wrong-class prediction counts as a false positive for the predicted class; an object without a correct-class match counts as a false negative for its actual class. The confusion matrix matches boxes independently across classes to show classification mistakes, so its diagonal can differ from the per-class TP counts when predictions overlap.
 
 For reproducible comparisons, keep the same annotation files, model outputs, and evaluator version. Each image must have a TXT file in `labels/`, including an empty file for a background image. A missing label file does not indicate background.
 

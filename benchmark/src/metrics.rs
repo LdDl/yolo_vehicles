@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::fs;
 use std::path::Path;
 
@@ -121,7 +121,6 @@ pub fn calculate_map(
     // TP/FP/FN counters per class
     let mut per_class_tp: Vec<usize> = vec![0; NUM_CLASSES];
     let mut per_class_fp: Vec<usize> = vec![0; NUM_CLASSES];
-    let mut per_class_fn: Vec<usize> = vec![0; NUM_CLASSES];
 
     // Count ground truths per class
     for gts in all_ground_truths.values() {
@@ -132,18 +131,25 @@ pub fn calculate_map(
         }
     }
 
-    // Match detections to ground truths
-    for (image_name, detections) in all_detections {
+    // Keep equal-confidence detections ordered consistently across runs.
+    let image_names: BTreeSet<_> = all_detections
+        .keys()
+        .chain(all_ground_truths.keys())
+        .collect();
+    for image_name in image_names {
+        let detections = all_detections
+            .get(image_name)
+            .map(Vec::as_slice)
+            .unwrap_or(&[]);
         let ground_truths = all_ground_truths
             .get(image_name)
             .cloned()
             .unwrap_or_default();
         let mut gt_matched: Vec<bool> = vec![false; ground_truths.len()];
-        // which class matched it
-        let mut gt_matched_by: Vec<Option<usize>> = vec![None; ground_truths.len()];
+        let mut ap_matched = vec![false; ground_truths.len()];
 
         // Sort detections by confidence (process high confidence first)
-        let mut sorted_dets = detections.clone();
+        let mut sorted_dets = detections.to_vec();
         sorted_dets.sort_by(|a, b| b.confidence.partial_cmp(&a.confidence).unwrap());
 
         for det in &sorted_dets {
@@ -151,12 +157,34 @@ pub fn calculate_map(
                 continue;
             }
 
+            // AP matches only within the predicted class, independently of the confusion matrix.
+            let mut ap_best_iou = 0.0;
+            let mut ap_best_gt = None;
+            for (gt_idx, gt) in ground_truths.iter().enumerate() {
+                if ap_matched[gt_idx] || gt.class_id != det.class_id {
+                    continue;
+                }
+                let iou = calculate_iou(det, gt);
+                if iou >= iou_threshold && iou > ap_best_iou {
+                    ap_best_iou = iou;
+                    ap_best_gt = Some(gt_idx);
+                }
+            }
+            let is_tp = ap_best_gt.is_some();
+            if let Some(gt_idx) = ap_best_gt {
+                ap_matched[gt_idx] = true;
+                per_class_tp[det.class_id] += 1;
+            } else {
+                per_class_fp[det.class_id] += 1;
+            }
+            per_class_detections[det.class_id].push((det.confidence, is_tp));
+
             // Find best matching ground truth (any class, for confusion matrix)
             let mut best_iou = 0.0;
             let mut best_gt_idx = None;
 
             for (gt_idx, gt) in ground_truths.iter().enumerate() {
-                if gt_matched[gt_idx] {
+                if gt_matched[gt_idx] || gt.class_id >= NUM_CLASSES {
                     continue;
                 }
                 let iou = calculate_iou(det, gt);
@@ -166,37 +194,20 @@ pub fn calculate_map(
                 }
             }
 
-            // Determine if true positive or false positive
+            // Record spatial matches, including class mistakes, for the confusion matrix.
             if let Some(gt_idx) = best_gt_idx {
                 let gt_class = ground_truths[gt_idx].class_id;
                 gt_matched[gt_idx] = true;
-                gt_matched_by[gt_idx] = Some(det.class_id);
-
-                if gt_class == det.class_id {
-                    // True positive: correct class
-                    per_class_detections[det.class_id].push((det.confidence, true));
-                    per_class_tp[det.class_id] += 1;
-                    confusion_matrix[gt_class][det.class_id] += 1;
-                } else {
-                    // Class mismatch: detection matched GT but wrong class
-                    per_class_detections[det.class_id].push((det.confidence, false));
-                    per_class_fp[det.class_id] += 1;
-                    // actual -> predicted
-                    confusion_matrix[gt_class][det.class_id] += 1;
-                }
+                confusion_matrix[gt_class][det.class_id] += 1;
             } else {
-                // False positive: no matching GT
-                per_class_detections[det.class_id].push((det.confidence, false));
-                per_class_fp[det.class_id] += 1;
                 // background -> predicted
                 confusion_matrix[NUM_CLASSES][det.class_id] += 1;
             }
         }
 
-        // Count false negatives (unmatched ground truths)
+        // Record objects with no spatial match in the confusion matrix.
         for (gt_idx, gt) in ground_truths.iter().enumerate() {
             if !gt_matched[gt_idx] && gt.class_id < NUM_CLASSES {
-                per_class_fn[gt.class_id] += 1;
                 // actual -> background (missed)
                 confusion_matrix[gt.class_id][NUM_CLASSES] += 1;
             }
@@ -232,7 +243,8 @@ pub fn calculate_map(
         .map(|class_id| ClassMetrics {
             tp: per_class_tp[class_id],
             fp: per_class_fp[class_id],
-            fn_: per_class_fn[class_id],
+            // Every ground-truth object without a correct-class match is a false negative.
+            fn_: per_class_num_gt[class_id] - per_class_tp[class_id],
         })
         .collect();
 
@@ -272,4 +284,69 @@ pub fn load_labels(label_path: &Path) -> Vec<GroundTruth> {
     }
 
     labels
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn ground_truth(class_id: usize) -> GroundTruth {
+        GroundTruth {
+            class_id,
+            x: 0.5,
+            y: 0.5,
+            width: 0.2,
+            height: 0.2,
+        }
+    }
+
+    fn detection(class_id: usize, confidence: f32) -> Detection {
+        Detection {
+            class_id,
+            confidence,
+            x: 0.5,
+            y: 0.5,
+            width: 0.2,
+            height: 0.2,
+        }
+    }
+
+    #[test]
+    fn wrong_class_counts_as_false_negative_for_actual_class() {
+        let detections = HashMap::from([("bus.jpg".into(), vec![detection(0, 0.9)])]);
+        let truth = HashMap::from([("bus.jpg".into(), vec![ground_truth(2)])]);
+        let result = calculate_map(&detections, &truth, 0.5);
+        assert_eq!(result.per_class_metrics[0].fp, 1);
+        assert_eq!(result.per_class_metrics[2].tp, 0);
+        assert_eq!(result.per_class_metrics[2].fn_, 1);
+        assert_eq!(result.confusion_matrix[2][0], 1);
+        assert_eq!(result.map, 0.0);
+    }
+
+    #[test]
+    fn wrong_class_cannot_consume_ap_match_and_duplicates_stay_false_positive() {
+        let detections = HashMap::from([(
+            "bus.jpg".into(),
+            vec![detection(0, 0.9), detection(2, 0.8), detection(2, 0.7)],
+        )]);
+        let truth = HashMap::from([("bus.jpg".into(), vec![ground_truth(2)])]);
+        let result = calculate_map(&detections, &truth, 0.5);
+        assert_eq!(result.per_class_metrics[0].fp, 1);
+        assert_eq!(result.per_class_metrics[2].tp, 1);
+        assert_eq!(result.per_class_metrics[2].fp, 1);
+        assert_eq!(result.per_class_metrics[2].fn_, 0);
+        assert!((result.per_class_ap[2] - 1.0).abs() < 1e-9);
+        assert_eq!(result.confusion_matrix[2][0], 1);
+    }
+
+    #[test]
+    fn counts_objects_in_images_without_predictions_and_background_detections() {
+        let detections = HashMap::from([("background.jpg".into(), vec![detection(0, 0.9)])]);
+        let truth = HashMap::from([("missed.jpg".into(), vec![ground_truth(2)])]);
+        let result = calculate_map(&detections, &truth, 0.5);
+        assert_eq!(result.per_class_metrics[0].fp, 1);
+        assert_eq!(result.per_class_metrics[2].fn_, 1);
+        assert_eq!(result.confusion_matrix[NUM_CLASSES][0], 1);
+        assert_eq!(result.confusion_matrix[2][NUM_CLASSES], 1);
+    }
 }
