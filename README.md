@@ -15,6 +15,33 @@ All models use the combined **Junction + MIO-TCD** dataset, the same train/val/t
 
 > **Note on Ultralytics export:** `imgsz` uses `[height, width]`. The scripts export ONNX with `imgsz=[256,416]` to match the Darknet input size.
 
+## Download trained models
+
+Ready-to-use models trained on **Junction + MIO-TCD** are available in [release v0.0.3](https://github.com/LdDl/yolo_vehicles/releases/tag/v0.0.3). Download them to run inference without training the models yourself.
+
+- Best checkpoints for all six models: `.weights` for Darknet and `.pt` for Ultralytics.
+- ONNX exports with input `[1,3,256,416]`, batch 1, and four classes.
+- Darknet training and inference configs, `vehicles.names`, and `SHA256SUMS`.
+- TensorRT `.engine` files built with FP16 enabled for all six models on each configuration below.
+
+| Device | CUDA | cuDNN | TensorRT |
+| :--- | :--- | :--- | :--- |
+| Jetson Nano | 10.2.300 | 8.2.1.32 | 8.2.1.8 |
+| Jetson Orin Nano | 12.6.68 | 9.3.0 | 10.3.0.30 |
+
+Engine filenames include the model, device, software versions and precision. For example:
+
+```text
+yolov8n-vehicles_best_jetson_nano_cuda-10.2.300_cudnn-8.2.1.32_trt-8.2.1.8_fp16.engine
+yolov8n-vehicles_best_jetson_orin_nano_cuda-12.6.68_cudnn-9.3.0_trt-10.3.0.30_fp16.engine
+```
+
+Choose the engine matching your device and software stack. For a different configuration, build an engine from the ONNX file on the target device. Jetson Nano and Jetson Orin Nano engines are separate builds and are not interchangeable.
+
+The Rust benchmark below uses ONNX files. Release assets have model-specific names, such as `yolov5nu-vehicles_best.onnx`; adjust the benchmark paths to where you downloaded them.
+
+>Note: I want to mention again that traditional YOLOv3 and v4 have been converted ONNX (to the YOLOv8 output format) via [`darknet2onnx`](https://github.com/LdDl/darknet2onnx) and then to TensorRT engines.
+
 ## Classes
 
 | ID | Class |
@@ -90,7 +117,7 @@ The workflow is:
 1. Install dependencies and prepare the combined Junction + MIO-TCD dataset once.
 2. Generate training paths and use the supplied four-class model configs.
 3. Train YOLOv3-tiny, YOLOv4-tiny, YOLOv5nu, YOLOv8n, YOLOv9t, and YOLO11n one at a time on the same split.
-4. Convert the two Darknet models with `darknet2onnx`. The Ultralytics training script exports each best checkpoint to ONNX automatically.
+4. Convert the two Darknet models with [`darknet2onnx`](https://github.com/LdDl/darknet2onnx). The Ultralytics training script exports each best checkpoint to ONNX automatically.
 5. Keep the trained weights, matching configs, ONNX files, and evaluation data for benchmarking.
 6. Compare the models with the Rust benchmark through ONNX Runtime, using 416x256 input for every model.
 
