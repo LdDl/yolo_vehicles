@@ -1,5 +1,0 @@
-classes = 4
-train = train_aic_hcmc.txt
-valid = val_aic_hcmc.txt
-names = data/vehicles.names
-backup = weights

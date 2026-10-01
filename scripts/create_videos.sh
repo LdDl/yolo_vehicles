@@ -1,63 +1,48 @@
-#!/bin/bash
-# Create videos from dataset images per source (camera/vid)
-
-DATASET_DIR="/home/dimitrii/python_work/vehicles_yolo/aic_hcmc2020/images"
-OUTPUT_DIR="/home/dimitrii/python_work/vehicles_yolo/videos"
-FPS=25
-
-create_video() {
-    local split=$1  # train or val
-    local source=$2 # cam_01, cam_02, ..., vid1, vid2, ...
-    local input_dir="$DATASET_DIR/$split"
-    local output_file="$OUTPUT_DIR/$split/${source}.mp4"
-    local tmp_list="/tmp/ffmpeg_list_${split}_${source}.txt"
-
-    # Find all JPGs for this source and create file list
-    find "$input_dir" -name "${source}_*.jpg" | sort > "$tmp_list"
-
-    count=$(wc -l < "$tmp_list")
-    if [ "$count" -eq 0 ]; then
-        echo "No images found for $split/$source"
-        rm -f "$tmp_list"
-        return
+#!/usr/bin/env bash
+# Build a slideshow preview of public validation images, without temporal assumptions.
+set -euo pipefail
+project_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source_dir="$(cd -- "${1:-$project_dir/datasets/vehicles/merged/images/val}" && pwd -P)"
+output_file="$(realpath -m -- "${2:-$project_dir/videos/public-val.mp4}")"
+if [[ -e "$output_file" ]]; then
+  printf 'Output already exists: %s\n' "$output_file" >&2
+  exit 1
+fi
+temporary_dir="$(mktemp -d -t vehicles-preview-XXXXXXXX)"
+cleanup() {
+  local file
+  for file in "$temporary_dir/images.list" "$temporary_dir/frames.txt"; do
+    if [[ -f "$file" ]]; then
+      rm -- "$file"
     fi
-
-    echo "Creating $output_file from $count frames..."
-
-    # Convert file list to ffmpeg concat format
-    local concat_list="/tmp/ffmpeg_concat_${split}_${source}.txt"
-    while read -r f; do
-        echo "file '$f'"
-        echo "duration 0.04"  # 1/25 fps
-    done < "$tmp_list" > "$concat_list"
-
-    # Create video using concat demuxer
-    ffmpeg -y -f concat -safe 0 -i "$concat_list" \
-        -c:v libx264 -preset fast -crf 23 \
-        -pix_fmt yuv420p \
-        "$output_file" 2>/dev/null
-
-    rm -f "$tmp_list" "$concat_list"
-    echo "Done: $output_file"
+  done
+  rmdir -- "$temporary_dir"
 }
+trap cleanup EXIT
 
-# Process train
-echo "=== Processing TRAIN ==="
-for i in $(seq -w 1 25); do
-    create_video train "cam_$i"
-done
-for i in 1 2 3 4 5; do
-    create_video train "vid$i"
-done
+find -L "$source_dir" -maxdepth 1 -type f \
+  \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' \) -print0 \
+  | LC_ALL=C sort -z > "$temporary_dir/images.list"
+images=()
+mapfile -d '' -t -n 100 images < "$temporary_dir/images.list"
+if (( ${#images[@]} == 0 )); then
+  printf 'No images in %s\n' "$source_dir" >&2
+  exit 1
+fi
 
-# Process val
-echo "=== Processing VAL ==="
-for i in $(seq -w 1 25); do
-    create_video val "cam_$i"
-done
-for i in 1 2 3 4 5; do
-    create_video val "vid$i"
-done
+listing="$temporary_dir/frames.txt"
+# Repeat the last entry so FFmpeg can apply its duration.
+for image in "${images[@]}" "${images[-1]}"; do
+  if [[ "$image" == *$'\n'* || "$image" == *$'\r'* ]]; then
+    printf 'Unsupported filename: %q\n' "$image" >&2
+    exit 1
+  fi
+  escaped="${image//\'/\'\\\'\'}"
+  printf "file '%s'\nduration 1\n" "$escaped"
+done > "$listing"
 
-echo "=== All done ==="
-echo "Videos saved to: $OUTPUT_DIR"
+mkdir -p -- "$(dirname -- "$output_file")"
+ffmpeg -n -f concat -safe 0 -i "$listing" \
+  -vf 'scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2,setsar=1' \
+  -r 1 -frames:v "${#images[@]}" -c:v libx264 \
+  -pix_fmt yuv420p "$output_file"

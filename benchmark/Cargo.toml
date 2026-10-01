@@ -2,19 +2,24 @@
 name = "vehicles-benchmark"
 version = "0.1.0"
 edition = "2021"
-description = "Benchmark YOLOv3-tiny, YOLOv4-tiny, YOLOv8n for vehicles detection"
+rust-version = "1.91"
+description = "Compare six vehicle detectors on Junction + MIO-TCD"
+
+[features]
+default = ["ort-backend"]
+ort-backend = ["od_opencv/ort-backend", "dep:ort"]
+ort-cuda = ["ort-backend", "od_opencv/ort-cuda-backend"]
 
 [dependencies]
-# Use local od_opencv for testing letterbox fix
-# od_opencv = { path = "/home/dimitrii/rust_work/object-detection-opencv-rust" }
-# od_opencv = { path = "/home/dimitrii/rust_work/object-detection-opencv-rust", features = ["letterbox"] }
-od_opencv = { version = "0.5.0", default-features = false, features = ["letterbox", "opencv-backend"] }
-opencv = { version = "0.96.0", default-features = false, features = ["dnn", "imgcodecs", "imgproc"] }
+od_opencv = { version = "=0.8.2", default-features = false, features = ["letterbox"] }
+ort = { version = "=2.0.0-rc.12", optional = true }
+image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
 clap = { version = "4", features = ["derive"] }
+
+[dev-dependencies]
+tempfile = "3"
 
 [[bin]]
 name = "benchmark"
 path = "src/main.rs"
-
-[patch.crates-io]
-cc = { git = "https://github.com/rust-lang/cc-rs.git", version = "1.0", tag = "1.0.79" }
+required-features = ["ort-backend"]

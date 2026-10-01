@@ -1,157 +1,72 @@
 #!/usr/bin/env python3
-"""
-Train YOLO models (v8, v9, v11) using Ultralytics.
-
-Prerequisites:
-    pip install ultralytics
-
-Usage:
-    # YOLOv8n (default)
-    python train_ultralytics.py --epochs 100
-
-    # YOLOv9t
-    python train_ultralytics.py --model v9t --epochs 100
-
-    # YOLOv11n
-    python train_ultralytics.py --model v11n --epochs 100
-
-    # Resume training
-    python train_ultralytics.py --resume weights/yolov9t-vehicles/weights/last.pt
-
-Supported models (lightweight for edge deployment):
-    v8n  - YOLOv8 nano  (~3.2M params)
-    v9t  - YOLOv9 tiny  (~2.0M params)
-    v11n - YOLOv11 nano (~2.6M params)
-"""
+"""Train and export YOLOv5u, YOLOv8n, YOLOv9t and YOLO11n on Junction + MIO-TCD."""
 
 import argparse
 from pathlib import Path
 
-# Model name mappings: our short names -> Ultralytics pretrained weights / architecture configs
-# Focus on lightweight models for edge deployment (Jetson Nano)
-MODEL_PRETRAINED = {
-    'v8n': 'yolov8n.pt',   # YOLOv8 nano (~3.2M params)
-    'v9t': 'yolov9t.pt',   # YOLOv9 tiny (~2.0M params)
-    'v11n': 'yolo11n.pt',  # YOLOv11 nano (~2.6M params)
-}
-
-# Architecture configs for training from scratch (built into Ultralytics)
-MODEL_YAML = {
-    'v8n': 'yolov8n.yaml',
-    'v9t': 'yolov9t.yaml',
-    'v11n': 'yolo11n.yaml',
+PROJECT = Path(__file__).resolve().parents[1]
+MODELS = {
+    "v5nu": "yolov5nu",
+    "v5su": "yolov5su",
+    "v5mu": "yolov5mu",
+    "v8n": "yolov8n",
+    "v9t": "yolov9t",
+    "v11n": "yolo11n",
 }
 
 
-def get_model_display_name(model_key: str) -> str:
-    """Convert model key to display name (e.g., 'v9t' -> 'YOLOv9t')."""
-    if model_key.startswith('v8'):
-        return f"YOLOv8{model_key[2:]}"
-    elif model_key.startswith('v9'):
-        return f"YOLOv9{model_key[2:]}"
-    elif model_key.startswith('v11'):
-        return f"YOLOv11{model_key[3:]}"
-    return model_key
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--model", choices=MODELS, default="v8n")
+    parser.add_argument("--data", type=Path, default=PROJECT / "data/generated/vehicles.yaml")
+    parser.add_argument("--weights", type=Path)
+    parser.add_argument("--output", type=Path, default=PROJECT / "weights")
+    parser.add_argument("--epochs", type=int, default=100)
+    parser.add_argument("--patience", type=int, default=20)
+    parser.add_argument("--batch", type=int, default=16)
+    parser.add_argument("--imgsz", type=int, default=416)
+    parser.add_argument("--device", default="0")
+    parser.add_argument("--workers", type=int, default=8)
+    initialization = parser.add_mutually_exclusive_group()
+    initialization.add_argument("--scratch", action="store_true")
+    initialization.add_argument("--resume", type=Path)
+    args = parser.parse_args(argv)
+    if args.weights and (args.scratch or args.resume):
+        parser.error("--weights cannot be combined with --scratch or --resume")
+    name = MODELS[args.model]
+    destination = args.output.expanduser().resolve() / f"{name}-vehicles"
+    if not args.resume and destination.exists():
+        parser.error(f"Run already exists: {destination}; use --resume or a new --output")
+    if not args.resume and not args.data.is_file():
+        parser.error(f"Missing dataset YAML: {args.data}; run prepare_dataset.py configure")
+    weights = (args.weights or PROJECT / "weights/pretrained" / f"{name}.pt").expanduser().resolve()
+    if not args.scratch and not args.resume and not weights.is_file():
+        parser.error(f"Missing weights: {weights}; run scripts/download_pretrained.py --model {args.model}")
 
-
-def main():
-    parser = argparse.ArgumentParser(
-        description='Train YOLO models for vehicles detection',
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-    python train_ultralytics.py --model v8n --epochs 100
-    python train_ultralytics.py --model v9t --epochs 100 --scratch
-    python train_ultralytics.py --model v11n --epochs 100 --batch 16
-        """
-    )
-    parser.add_argument('--model', type=str, default='v8n',
-                        choices=list(MODEL_PRETRAINED.keys()),
-                        help='Model variant (default: v8n)')
-    parser.add_argument('--epochs', type=int, default=100, help='Number of epochs')
-    parser.add_argument('--batch', type=int, default=-1, help='Batch size (-1 for auto)')
-    parser.add_argument('--imgsz', type=int, default=416, help='Image size (single int for training)')
-    parser.add_argument('--device', type=str, default='0', help='CUDA device (0, 1, cpu)')
-    parser.add_argument('--workers', type=int, default=8, help='Number of dataloader workers')
-    parser.add_argument('--resume', type=str, default=None, help='Resume from checkpoint')
-    parser.add_argument('--scratch', action='store_true', help='Train from scratch (no pretrained weights)')
-    args = parser.parse_args()
-
-    # Import here to avoid slow import if just checking --help
     from ultralytics import YOLO
 
-    script_dir = Path(__file__).parent
-    project_dir = script_dir.parent
-    data_yaml = project_dir / 'data' / 'vehicles.yaml'
-    weights_dir = project_dir / 'weights'
-
-    weights_dir.mkdir(exist_ok=True)
-
-    model_name = get_model_display_name(args.model)
-    project_name = f"{model_name.lower()}-vehicles"
-
-    print("=" * 60)
-    print(f"{model_name} Training for Vehicles Detection")
-    print("=" * 60)
-    print(f"Model: {args.model} ({MODEL_PRETRAINED[args.model]})")
-    print(f"Data config: {data_yaml}")
-    print(f"Image size: {args.imgsz}")
-    print(f"Epochs: {args.epochs}")
-    print(f"Batch size: {args.batch}")
-    print(f"Device: {args.device}")
-    print()
-
     if args.resume:
-        # Resume from checkpoint
-        print(f"Resuming from: {args.resume}")
-        model = YOLO(args.resume)
-    elif args.scratch:
-        # Train from scratch using architecture config (no pretrained weights)
-        model_yaml = MODEL_YAML[args.model]
-        print(f"Training from scratch ({model_yaml})")
-        model = YOLO(model_yaml)
+        model = YOLO(str(args.resume.expanduser().resolve()))
+        model.train(resume=True)
     else:
-        # Use pretrained COCO weights (transfer learning - recommended)
-        pretrained_name = MODEL_PRETRAINED[args.model]
-        print(f"Using COCO pretrained weights ({pretrained_name})")
-        model = YOLO(pretrained_name)
-
-    # Train
-    # rect=True enables rectangular batching (adapts to each batch's aspect ratio)
-    results = model.train(
-        data=str(data_yaml),
-        epochs=args.epochs,
-        batch=args.batch,
-        imgsz=args.imgsz,
-        device=args.device,
-        workers=args.workers,
-        project=str(weights_dir),
-        name=project_name,
-        exist_ok=True,
-        pretrained=not args.scratch,
-        verbose=True,
-        rect=True,
-    )
-
-    # Export to ONNX for deployment
-    print()
-    print("Exporting to ONNX...")
-    best_weights = weights_dir / project_name / 'weights' / 'best.pt'
-
-    if best_weights.exists():
-        export_model = YOLO(str(best_weights))
-        # imgsz=[height, width] in Ultralytics - use [256, 416] for 416x256 (width x height)
-        export_model.export(
-            format='onnx',
-            imgsz=[256, 416],  # height=256, width=416 to match Darknet 416x256
-            opset=12,
-            simplify=True,
+        # Ultralytics YOLOv5u YAML names omit the 'u' suffix used by its checkpoints.
+        architecture = f"{name.removesuffix('u')}.yaml"
+        model = YOLO(architecture if args.scratch else str(weights))
+        model.train(
+            data=str(args.data.expanduser().resolve()), epochs=args.epochs,
+            patience=args.patience, batch=args.batch, imgsz=args.imgsz,
+            device=args.device, workers=args.workers, seed=42,
+            project=str(destination.parent), name=destination.name,
+            exist_ok=False, rect=True, pretrained=not args.scratch,
         )
-        print(f"ONNX exported: {best_weights.with_suffix('.onnx')}")
-
-    print()
-    print("Training complete!")
-    print(f"Best weights: {best_weights}")
+    best = Path(model.trainer.best)
+    if not best.is_file():
+        raise FileNotFoundError(f"Training did not produce best.pt: {best}")
+    YOLO(str(best)).export(
+        format="onnx", imgsz=[256, 416], batch=1,
+        dynamic=False, half=False, nms=None, opset=12, simplify=True,
+    )
+    print(f"Best weights: {best}\nONNX: {best.with_suffix('.onnx')}")
 
 
 if __name__ == "__main__":

@@ -3,10 +3,8 @@ use std::fs;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-use opencv::{imgcodecs::imread, prelude::*};
-
 use crate::metrics::{calculate_map, load_labels, ClassMetrics};
-use crate::models::{convert_detections, YoloModel};
+use crate::models::{convert_detections, load_image, YoloModel};
 use crate::types::{Detection, GroundTruth, CONF_THRESHOLD, IOU_THRESHOLD, NMS_THRESHOLD};
 
 /// Run speed benchmark on a single image
@@ -15,14 +13,17 @@ pub fn benchmark_speed<F>(
     iterations: u32,
     warmup: u32,
     mut inference_fn: F,
-) -> (Duration, Duration, Duration)
+) -> Result<(Duration, Duration, Duration), Box<dyn std::error::Error>>
 where
-    F: FnMut() -> Result<(), opencv::Error>,
+    F: FnMut() -> Result<(), Box<dyn std::error::Error>>,
 {
+    if iterations == 0 {
+        return Err("Speed benchmark needs at least one iteration".into());
+    }
     // Warmup
     println!("  Warming up ({} iterations)...", warmup);
     for _ in 0..warmup {
-        inference_fn().expect("Warmup inference failed");
+        inference_fn()?;
     }
 
     // Benchmark
@@ -31,7 +32,7 @@ where
 
     for i in 0..iterations {
         let start = Instant::now();
-        inference_fn().expect("Benchmark inference failed");
+        inference_fn()?;
         let elapsed = start.elapsed();
         times.push(elapsed);
 
@@ -44,7 +45,7 @@ where
     let min_time = *times.iter().min().unwrap();
     let max_time = *times.iter().max().unwrap();
 
-    (total_time, min_time, max_time)
+    Ok((total_time, min_time, max_time))
 }
 
 /// mAP evaluation result with timing info
@@ -61,8 +62,8 @@ pub struct MapResult {
 }
 
 /// Run mAP evaluation on validation set
-pub fn run_map_evaluation<M: YoloModel>(
-    model: &mut M,
+pub fn run_map_evaluation(
+    model: &mut YoloModel,
     val_images_dir: &Path,
     val_labels_dir: &Path,
     max_images: usize,
@@ -71,8 +72,8 @@ pub fn run_map_evaluation<M: YoloModel>(
 }
 
 /// Run mAP evaluation with debug output
-pub fn run_map_evaluation_debug<M: YoloModel>(
-    model: &mut M,
+pub fn run_map_evaluation_debug(
+    model: &mut YoloModel,
     val_images_dir: &Path,
     val_labels_dir: &Path,
     max_images: usize,
@@ -80,8 +81,8 @@ pub fn run_map_evaluation_debug<M: YoloModel>(
     run_map_evaluation_impl(model, val_images_dir, val_labels_dir, max_images, true)
 }
 
-fn run_map_evaluation_impl<M: YoloModel>(
-    model: &mut M,
+fn run_map_evaluation_impl(
+    model: &mut YoloModel,
     val_images_dir: &Path,
     val_labels_dir: &Path,
     max_images: usize,
@@ -93,11 +94,17 @@ fn run_map_evaluation_impl<M: YoloModel>(
 
     // Get list of images
     let mut image_files: Vec<_> = fs::read_dir(val_images_dir)?
-        .filter_map(|e| e.ok())
+        .collect::<Result<Vec<_>, _>>()?
+        .into_iter()
         .filter(|e| {
             e.path()
                 .extension()
-                .map(|ext| ext == "jpg" || ext == "png")
+                .map(|ext| {
+                    matches!(
+                        ext.to_string_lossy().to_ascii_lowercase().as_str(),
+                        "jpg" | "jpeg" | "png"
+                    )
+                })
                 .unwrap_or(false)
         })
         .collect();
@@ -110,6 +117,9 @@ fn run_map_evaluation_impl<M: YoloModel>(
         image_files.len()
     };
 
+    if total_images == 0 {
+        return Err(format!("No JPG/PNG images in {}", val_images_dir.display()).into());
+    }
     println!("  Processing {} images for mAP...", total_images);
 
     for (idx, entry) in image_files.iter().take(total_images).enumerate() {
@@ -117,19 +127,21 @@ fn run_map_evaluation_impl<M: YoloModel>(
         let stem = image_path.file_stem().unwrap().to_str().unwrap();
         let label_path = val_labels_dir.join(format!("{}.txt", stem));
 
-        // Load image
-        let image = imread(image_path.to_str().unwrap(), 1)?;
-        if image.empty() {
-            continue;
+        if !label_path.is_file() {
+            return Err(format!(
+                "Missing label: {} (background images need an empty TXT)",
+                label_path.display()
+            )
+            .into());
         }
-
-        let img_width = image.cols();
-        let img_height = image.rows();
+        let image = load_image(&image_path)?;
+        let img_width = image.width();
+        let img_height = image.height();
 
         // Run inference with timing
         let start = Instant::now();
         let (boxes, class_ids, confidences) =
-            model.forward(&image, CONF_THRESHOLD, NMS_THRESHOLD)?;
+            model.detect(&image, CONF_THRESHOLD, NMS_THRESHOLD)?;
         inference_times.push(start.elapsed());
 
         // Debug output for first 3 images
@@ -148,7 +160,8 @@ fn run_map_evaluation_impl<M: YoloModel>(
         }
 
         // Convert detections
-        let detections = convert_detections(&boxes, &class_ids, &confidences, img_width, img_height);
+        let detections =
+            convert_detections(&boxes, &class_ids, &confidences, img_width, img_height);
         all_detections.insert(stem.to_string(), detections.clone());
 
         // Load ground truth
@@ -189,8 +202,16 @@ fn run_map_evaluation_impl<M: YoloModel>(
     } else {
         Duration::ZERO
     };
-    let min_inference_time = inference_times.iter().min().copied().unwrap_or(Duration::ZERO);
-    let max_inference_time = inference_times.iter().max().copied().unwrap_or(Duration::ZERO);
+    let min_inference_time = inference_times
+        .iter()
+        .min()
+        .copied()
+        .unwrap_or(Duration::ZERO);
+    let max_inference_time = inference_times
+        .iter()
+        .max()
+        .copied()
+        .unwrap_or(Duration::ZERO);
 
     Ok(MapResult {
         map: eval_results.map,
@@ -203,4 +224,61 @@ fn run_map_evaluation_impl<M: YoloModel>(
         min_inference_time,
         max_inference_time,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use od_opencv::backend_ort::OrtModelError;
+    use od_opencv::{BBox, ImageBuffer, ObjectDetector};
+
+    struct FixtureDetector;
+
+    impl ObjectDetector for FixtureDetector {
+        type Input = ImageBuffer;
+        type Error = OrtModelError;
+
+        fn detect(
+            &mut self,
+            input: &ImageBuffer,
+            _conf: f32,
+            _nms: f32,
+        ) -> Result<(Vec<BBox>, Vec<usize>, Vec<f32>), OrtModelError> {
+            if input.as_slice().unwrap()[0] > 0 {
+                Ok((vec![BBox::new(1, 1, 2, 2)], vec![0], vec![0.9]))
+            } else {
+                Ok((vec![], vec![], vec![]))
+            }
+        }
+    }
+
+    #[test]
+    fn evaluates_rgb_images_and_empty_background_labels() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path();
+        image::RgbImage::from_pixel(4, 4, image::Rgb([255, 0, 0]))
+            .save(root.join("object.png"))
+            .unwrap();
+        image::RgbImage::new(4, 4)
+            .save(root.join("background.png"))
+            .unwrap();
+        fs::write(root.join("object.txt"), "0 0.5 0.5 0.5 0.5\n").unwrap();
+        fs::write(root.join("background.txt"), "").unwrap();
+        let result = run_map_evaluation(&mut FixtureDetector, root, root, 0).unwrap();
+        assert_eq!(result.num_images, 2);
+        assert!((result.map - 1.0).abs() < 1e-9);
+        assert_eq!(result.per_class_metrics[0].tp, 1);
+        assert_eq!(result.per_class_metrics[0].fp, 0);
+        fs::remove_file(root.join("background.txt")).unwrap();
+        assert!(run_map_evaluation(&mut FixtureDetector, root, root, 0).is_err());
+    }
+
+    #[test]
+    fn rejects_empty_image_directory_and_propagates_inference_errors() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path();
+        assert!(run_map_evaluation(&mut FixtureDetector, root, root, 0).is_err());
+        assert!(benchmark_speed("fixture", 1, 0, || Err("fixture failure".into())).is_err());
+        assert!(benchmark_speed("fixture", 0, 0, || Ok(())).is_err());
+    }
 }
