@@ -15,6 +15,31 @@ All models use the combined **Junction + MIO-TCD** dataset, the same train/val/t
 
 > **Note on Ultralytics export:** `imgsz` uses `[height, width]`. The scripts export ONNX with `imgsz=[256,416]` to match the Darknet input size.
 
+## Table of contents
+
+- [Download trained models](#download-trained-models)
+- [Classes](#classes)
+- [Datasets](#datasets)
+- [Project structure](#project-structure)
+- [Quick start](#quick-start)
+  - [1. Install dependencies](#1-install-dependencies)
+  - [2. Download and prepare datasets](#2-download-and-prepare-datasets)
+  - [3. Download pretrained weights](#3-download-pretrained-weights)
+  - [4. Train models](#4-train-models)
+    - [YOLOv3-tiny / YOLOv4-tiny (Darknet)](#yolov3-tiny--yolov4-tiny-darknet)
+    - [YOLOv5nu / YOLOv8n / YOLOv9t / YOLO11n (Ultralytics)](#yolov5nu--yolov8n--yolov9t--yolo11n-ultralytics)
+  - [5. Export Darknet models to ONNX](#5-export-darknet-models-to-onnx)
+- [Output files](#output-files)
+  - [Files for benchmarking](#files-for-benchmarking)
+- [Benchmarking](#benchmarking)
+  - [Build benchmark](#build-benchmark)
+  - [Run benchmark](#run-benchmark)
+  - [Speed + mAP evaluation (recommended)](#speed--map-evaluation-recommended)
+  - [With CUDA acceleration](#with-cuda-acceleration)
+  - [Compare multiple models](#compare-multiple-models)
+- [Benchmark results](#benchmark-results)
+- [Tests](#tests)
+
 ## Download trained models
 
 Ready-to-use models trained on **Junction + MIO-TCD** are available in [release v0.0.3](https://github.com/LdDl/yolo_vehicles/releases/tag/v0.0.3). Download them to run inference without training the models yourself.
