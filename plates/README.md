@@ -13,6 +13,7 @@ This is the plate detector stage of a planned vehicle -> plate -> OCR cascade. T
   - [Ultralytics](#ultralytics)
 - [Export Darknet to ONNX](#export-darknet-to-onnx)
 - [Benchmark](#benchmark)
+- [Benchmark results](#benchmark-results)
 - [Input size experiments](#input-size-experiments)
 - [Output files](#output-files)
 
@@ -180,7 +181,59 @@ Pass only the model arguments whose weights are ready. For CPU, omit `--cuda`. F
 
 For a separate speed measurement, replace the two validation directory arguments with `--image path/to/fixed-image.jpg --iterations 1000 --warmup 50` and retain the same model arguments. Use one fixed image and one device for all models. The measured call includes preprocessing, inference and postprocessing, not JPEG loading. The AP estimator and its limitations are described in [Reading AP results](../benchmark/README.md#reading-ap-results).
 
-Do not combine plate results with the vehicle table: these are different tasks and taxonomies. Record dataset version, model checkpoint, dimensions, thresholds, runtime and device with every result. No plate benchmark results are available yet.
+Do not combine plate results with the vehicle table: these are different tasks and taxonomies. Record dataset version, model checkpoint, dimensions, thresholds, runtime and device with every result. The current validation results are listed below.
+
+## Benchmark results
+
+Validation results on the **Russian license plate dataset**, measured on 2026-10-04. Five models were evaluated together; YOLOv9t was evaluated in a separate run with the same input size, thresholds and validation split. Speed was measured separately for all six models on one fixed image with warmup. Test-set results are not available yet.
+
+| Model | mAP@0.50 | Mean time (ms) | FPS |
+| :--- | ---: | ---: | ---: |
+| YOLOv3-tiny | 85.27% | 1.64 | 611.43 |
+| YOLOv4-tiny | 87.06% | **1.52** | **657.31** |
+| YOLOv5nu | 83.38% | 1.76 | 569.48 |
+| YOLOv8n | 85.09% | 1.78 | 561.28 |
+| YOLOv9t | **88.93%** | 3.40 | 294.53 |
+| YOLO11n | 88.78% | 1.98 | 505.24 |
+
+> **Note on timing:** The table uses the separate speed benchmark with 50 warmup calls and 1000 timed calls per model. Accuracy comes from the validation runs. FPS describes the detector on this GPU and fixed image; it is not an end-to-end video or Jetson Nano measurement.
+
+**Per-class AP@0.50:**
+
+| Model | Civilian | Taxi | Military | Police | Diplomatic |
+| :--- | ---: | ---: | ---: | ---: | ---: |
+| YOLOv3-tiny | 72.51% | 81.48% | 90.82% | 90.63% | 90.91% |
+| YOLOv4-tiny | 72.73% | 89.93% | 90.82% | 90.91% | 90.91% |
+| YOLOv5nu | 71.43% | 81.82% | 81.82% | 90.91% | 90.91% |
+| YOLOv8n | 80.25% | 81.82% | 81.72% | 90.77% | 90.91% |
+| YOLOv9t | 81.62% | 90.28% | 90.91% | 90.91% | 90.91% |
+| YOLO11n | 80.94% | 99.39% | 90.82% | 81.82% | 90.91% |
+
+**Detection metrics at confidence 0.25:**
+
+| Model | Precision (micro) | Recall (micro) | F1 (micro) |
+| :--- | ---: | ---: | ---: |
+| YOLOv3-tiny | **96.76%** | 90.61% | 93.58% |
+| YOLOv4-tiny | 96.19% | 91.82% | **93.95%** |
+| YOLOv5nu | 95.18% | 89.70% | 92.36% |
+| YOLOv8n | 91.56% | 88.79% | 90.15% |
+| YOLOv9t | 92.19% | **93.03%** | 92.61% |
+| YOLO11n | 94.98% | 91.82% | 93.37% |
+
+**Measurement setup:**
+
+- NVIDIA GeForce RTX 5060 Ti, AMD Ryzen 7 7800X3D, ONNX Runtime 1.29.0 / CUDA (system build).
+- Float32 ONNX input, batch 1, 320x192 with letterbox. Confidence 0.25, NMS IoU 0.45, evaluation IoU 0.50.
+- Accuracy: all 303 validation images with 330 annotated plates. Class counts: 57 civilian, 29 taxi, 105 military, 69 police and 70 diplomatic. There are no background-only images in this validation split.
+- AP uses 11-point interpolation after confidence filtering. The reported mAP is not directly interchangeable with Darknet or Ultralytics mAP. Micro precision, recall and F1 aggregate object counts across all five classes.
+- Speed: 50 warmup calls and 1000 timed calls per model on `datasets/plates/images/val/2644.jpg` (480x320). Timing covers preprocessing, inference and postprocessing, excluding image loading from disk. The image path is recorded in `benchmark-results/plates/speed-image.txt`.
+- Source logs: `benchmark-results/plates/val-cuda.log`, `benchmark-results/plates/val-v9-cuda.log` and `benchmark-results/plates/speed-cuda.log`. System runtime linked through `ORT_LIB_PATH=/usr/lib` and `ORT_PREFER_DYNAMIC_LINK=1`; cuDNN preloaded with `LD_PRELOAD=/usr/lib/libcudnn.so.9`. See [CUDA troubleshooting](../benchmark/README.md#cuda-troubleshooting).
+
+YOLOv9t has the highest measured mAP, 0.15 percentage points above YOLO11n. It also has the highest recall at confidence 0.25, with 307 true positives and 26 false positives. YOLOv4-tiny has the highest micro F1 at that threshold, with 303 true positives and 12 false positives. The small mAP gap between v9t and 11n does not establish a reliable advantage beyond this validation sample. Civilian plates have the lowest AP for every evaluated model. The validation sample is small, especially for taxi plates, so a few objects can noticeably change the per-class results.
+
+YOLOv4-tiny has the lowest mean latency in this speed run: 1.52 ms. YOLO11n takes 1.98 ms, compared with 3.40 ms for YOLOv9t despite their similar validation mAP. Repeat speed measurements before treating small differences as stable performance advantages.
+
+These results describe standalone plate detection on the published validation images. They do not measure the complete vehicle -> plate -> OCR cascade, performance on background-only frames or Jetson Nano speed. Evaluate the selected models on the held-out test split and representative vehicle crops before choosing a deployment model.
 
 ## Input size experiments
 
