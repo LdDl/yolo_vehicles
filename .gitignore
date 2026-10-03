@@ -1,5 +1,12 @@
 # Dataset sources and generated splits.
 /datasets/
+/plates/images/
+/plates/labels/
+/plates/rename_map.csv
+/plates/preview.ipynb
+/plates/data_multiclass.yaml
+/plates/split_summary.json
+/plates/.ipynb_checkpoints/
 /aic_hcmc2020/
 /distilled_data*/
 /distill_road_traffic/

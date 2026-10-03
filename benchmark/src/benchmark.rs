@@ -67,8 +67,16 @@ pub fn run_map_evaluation(
     val_images_dir: &Path,
     val_labels_dir: &Path,
     max_images: usize,
+    num_classes: usize,
 ) -> Result<MapResult, Box<dyn std::error::Error>> {
-    run_map_evaluation_impl(model, val_images_dir, val_labels_dir, max_images, false)
+    run_map_evaluation_impl(
+        model,
+        val_images_dir,
+        val_labels_dir,
+        max_images,
+        num_classes,
+        false,
+    )
 }
 
 /// Run mAP evaluation with debug output
@@ -77,8 +85,16 @@ pub fn run_map_evaluation_debug(
     val_images_dir: &Path,
     val_labels_dir: &Path,
     max_images: usize,
+    num_classes: usize,
 ) -> Result<MapResult, Box<dyn std::error::Error>> {
-    run_map_evaluation_impl(model, val_images_dir, val_labels_dir, max_images, true)
+    run_map_evaluation_impl(
+        model,
+        val_images_dir,
+        val_labels_dir,
+        max_images,
+        num_classes,
+        true,
+    )
 }
 
 fn run_map_evaluation_impl(
@@ -86,6 +102,7 @@ fn run_map_evaluation_impl(
     val_images_dir: &Path,
     val_labels_dir: &Path,
     max_images: usize,
+    num_classes: usize,
     debug: bool,
 ) -> Result<MapResult, Box<dyn std::error::Error>> {
     let mut all_detections: HashMap<String, Vec<Detection>> = HashMap::new();
@@ -166,6 +183,9 @@ fn run_map_evaluation_impl(
 
         // Load ground truth
         let ground_truths = load_labels(&label_path);
+        if ground_truths.iter().any(|gt| gt.class_id >= num_classes) {
+            return Err(format!("{}: class ID outside selected task", label_path.display()).into());
+        }
         all_ground_truths.insert(stem.to_string(), ground_truths.clone());
 
         // Debug: compare detections vs ground truth
@@ -192,7 +212,12 @@ fn run_map_evaluation_impl(
     }
 
     // Calculate mAP and metrics
-    let eval_results = calculate_map(&all_detections, &all_ground_truths, IOU_THRESHOLD);
+    let eval_results = calculate_map(
+        &all_detections,
+        &all_ground_truths,
+        IOU_THRESHOLD,
+        num_classes,
+    );
 
     // Calculate timing stats
     let total_inference_time: Duration = inference_times.iter().sum();
@@ -264,20 +289,20 @@ mod tests {
             .unwrap();
         fs::write(root.join("object.txt"), "0 0.5 0.5 0.5 0.5\n").unwrap();
         fs::write(root.join("background.txt"), "").unwrap();
-        let result = run_map_evaluation(&mut FixtureDetector, root, root, 0).unwrap();
+        let result = run_map_evaluation(&mut FixtureDetector, root, root, 0, 4).unwrap();
         assert_eq!(result.num_images, 2);
         assert!((result.map - 1.0).abs() < 1e-9);
         assert_eq!(result.per_class_metrics[0].tp, 1);
         assert_eq!(result.per_class_metrics[0].fp, 0);
         fs::remove_file(root.join("background.txt")).unwrap();
-        assert!(run_map_evaluation(&mut FixtureDetector, root, root, 0).is_err());
+        assert!(run_map_evaluation(&mut FixtureDetector, root, root, 0, 4).is_err());
     }
 
     #[test]
     fn rejects_empty_image_directory_and_propagates_inference_errors() {
         let directory = tempfile::tempdir().unwrap();
         let root = directory.path();
-        assert!(run_map_evaluation(&mut FixtureDetector, root, root, 0).is_err());
+        assert!(run_map_evaluation(&mut FixtureDetector, root, root, 0, 4).is_err());
         assert!(benchmark_speed("fixture", 1, 0, || Err("fixture failure".into())).is_err());
         assert!(benchmark_speed("fixture", 0, 0, || Ok(())).is_err());
     }

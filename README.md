@@ -20,6 +20,7 @@ All models use the combined **Junction + MIO-TCD** dataset, the same train/val/t
 - [Download trained models](#download-trained-models)
 - [Classes](#classes)
 - [Datasets](#datasets)
+- [License plate detection](#license-plate-detection)
 - [Project structure](#project-structure)
 - [Quick start](#quick-start)
   - [1. Install dependencies](#1-install-dependencies)
@@ -107,6 +108,10 @@ These are dataset counts, not model results. Each run saves its actual counts to
 > **Note:** Junction provides a public sample, not the complete dataset from the paper. The official MIO test set has no available labels, so our val/test splits come from its annotated train set. MIO camera IDs are unavailable; this split does not guarantee evaluation on unseen cameras. Classes are not automatically balanced.
 
 See [docs/datasets.md](docs/datasets.md) for class mappings, filtering, and cleanup instructions. MIO's original README specifies **CC BY-NC-SA 4.0**; annotation conversion does not change the dataset license.
+
+## License plate detection
+
+A separate [plate detection workflow](plates/README.md) uses my [Russian license plate dataset](https://www.kaggle.com/datasets/dimahkiin/russian-license-plates-5-class-detection) with five categories: civilian, taxi, military, police and diplomatic. It includes dataset preparation, training configs and comparison through the same Rust benchmark with `--task plates`. This is the detection stage of a planned vehicle -> plate -> OCR cascade; OCR is not implemented yet.
 
 ## Project Structure
 

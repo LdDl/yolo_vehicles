@@ -2,7 +2,7 @@ use std::collections::{BTreeSet, HashMap};
 use std::fs;
 use std::path::Path;
 
-use crate::types::{Detection, GroundTruth, NUM_CLASSES};
+use crate::types::{Detection, GroundTruth};
 
 /// Per-class metrics (TP, FP, FN counts)
 #[derive(Debug, Clone)]
@@ -110,22 +110,23 @@ pub fn calculate_map(
     all_detections: &HashMap<String, Vec<Detection>>,
     all_ground_truths: &HashMap<String, Vec<GroundTruth>>,
     iou_threshold: f32,
+    num_classes: usize,
 ) -> EvalResults {
-    let mut per_class_detections: Vec<Vec<(f32, bool)>> = vec![Vec::new(); NUM_CLASSES];
-    let mut per_class_num_gt: Vec<usize> = vec![0; NUM_CLASSES];
+    let mut per_class_detections: Vec<Vec<(f32, bool)>> = vec![Vec::new(); num_classes];
+    let mut per_class_num_gt: Vec<usize> = vec![0; num_classes];
 
     // Confusion matrix: [actual_class][predicted_class]
     // +1 for "background" (false positives with no GT match)
-    let mut confusion_matrix: Vec<Vec<usize>> = vec![vec![0; NUM_CLASSES + 1]; NUM_CLASSES + 1];
+    let mut confusion_matrix: Vec<Vec<usize>> = vec![vec![0; num_classes + 1]; num_classes + 1];
 
     // TP/FP/FN counters per class
-    let mut per_class_tp: Vec<usize> = vec![0; NUM_CLASSES];
-    let mut per_class_fp: Vec<usize> = vec![0; NUM_CLASSES];
+    let mut per_class_tp: Vec<usize> = vec![0; num_classes];
+    let mut per_class_fp: Vec<usize> = vec![0; num_classes];
 
     // Count ground truths per class
     for gts in all_ground_truths.values() {
         for gt in gts {
-            if gt.class_id < NUM_CLASSES {
+            if gt.class_id < num_classes {
                 per_class_num_gt[gt.class_id] += 1;
             }
         }
@@ -153,7 +154,7 @@ pub fn calculate_map(
         sorted_dets.sort_by(|a, b| b.confidence.partial_cmp(&a.confidence).unwrap());
 
         for det in &sorted_dets {
-            if det.class_id >= NUM_CLASSES {
+            if det.class_id >= num_classes {
                 continue;
             }
 
@@ -184,7 +185,7 @@ pub fn calculate_map(
             let mut best_gt_idx = None;
 
             for (gt_idx, gt) in ground_truths.iter().enumerate() {
-                if gt_matched[gt_idx] || gt.class_id >= NUM_CLASSES {
+                if gt_matched[gt_idx] || gt.class_id >= num_classes {
                     continue;
                 }
                 let iou = calculate_iou(det, gt);
@@ -201,15 +202,15 @@ pub fn calculate_map(
                 confusion_matrix[gt_class][det.class_id] += 1;
             } else {
                 // background -> predicted
-                confusion_matrix[NUM_CLASSES][det.class_id] += 1;
+                confusion_matrix[num_classes][det.class_id] += 1;
             }
         }
 
         // Record objects with no spatial match in the confusion matrix.
         for (gt_idx, gt) in ground_truths.iter().enumerate() {
-            if !gt_matched[gt_idx] && gt.class_id < NUM_CLASSES {
+            if !gt_matched[gt_idx] && gt.class_id < num_classes {
                 // actual -> background (missed)
-                confusion_matrix[gt.class_id][NUM_CLASSES] += 1;
+                confusion_matrix[gt.class_id][num_classes] += 1;
             }
         }
     }
@@ -219,7 +220,7 @@ pub fn calculate_map(
     let mut total_ap = 0.0;
     let mut valid_classes = 0;
 
-    for class_id in 0..NUM_CLASSES {
+    for class_id in 0..num_classes {
         let ap = calculate_ap(
             &mut per_class_detections[class_id],
             per_class_num_gt[class_id],
@@ -239,7 +240,7 @@ pub fn calculate_map(
     };
 
     // Collect per-class metrics (TP, FP, FN counts)
-    let per_class_metrics: Vec<ClassMetrics> = (0..NUM_CLASSES)
+    let per_class_metrics: Vec<ClassMetrics> = (0..num_classes)
         .map(|class_id| ClassMetrics {
             tp: per_class_tp[class_id],
             fp: per_class_fp[class_id],
@@ -312,10 +313,26 @@ mod tests {
     }
 
     #[test]
+    fn plate_class_four_is_not_background() {
+        let detections = HashMap::from([("plate.jpg".into(), vec![detection(4, 0.9)])]);
+        let truth = HashMap::from([
+            ("plate.jpg".into(), vec![ground_truth(4)]),
+            ("missed.jpg".into(), vec![ground_truth(3)]),
+        ]);
+        let result = calculate_map(&detections, &truth, 0.5, 5);
+        assert_eq!(result.per_class_ap.len(), 5);
+        assert_eq!(result.confusion_matrix.len(), 6);
+        assert_eq!(result.confusion_matrix[4][4], 1);
+        assert_eq!(result.confusion_matrix[3][5], 1);
+        assert!((result.per_class_ap[4] - 1.0).abs() < 1e-9);
+        assert!((result.map - 0.5).abs() < 1e-9);
+    }
+
+    #[test]
     fn wrong_class_counts_as_false_negative_for_actual_class() {
         let detections = HashMap::from([("bus.jpg".into(), vec![detection(0, 0.9)])]);
         let truth = HashMap::from([("bus.jpg".into(), vec![ground_truth(2)])]);
-        let result = calculate_map(&detections, &truth, 0.5);
+        let result = calculate_map(&detections, &truth, 0.5, 4);
         assert_eq!(result.per_class_metrics[0].fp, 1);
         assert_eq!(result.per_class_metrics[2].tp, 0);
         assert_eq!(result.per_class_metrics[2].fn_, 1);
@@ -330,7 +347,7 @@ mod tests {
             vec![detection(0, 0.9), detection(2, 0.8), detection(2, 0.7)],
         )]);
         let truth = HashMap::from([("bus.jpg".into(), vec![ground_truth(2)])]);
-        let result = calculate_map(&detections, &truth, 0.5);
+        let result = calculate_map(&detections, &truth, 0.5, 4);
         assert_eq!(result.per_class_metrics[0].fp, 1);
         assert_eq!(result.per_class_metrics[2].tp, 1);
         assert_eq!(result.per_class_metrics[2].fp, 1);
@@ -343,10 +360,10 @@ mod tests {
     fn counts_objects_in_images_without_predictions_and_background_detections() {
         let detections = HashMap::from([("background.jpg".into(), vec![detection(0, 0.9)])]);
         let truth = HashMap::from([("missed.jpg".into(), vec![ground_truth(2)])]);
-        let result = calculate_map(&detections, &truth, 0.5);
+        let result = calculate_map(&detections, &truth, 0.5, 4);
         assert_eq!(result.per_class_metrics[0].fp, 1);
         assert_eq!(result.per_class_metrics[2].fn_, 1);
-        assert_eq!(result.confusion_matrix[NUM_CLASSES][0], 1);
-        assert_eq!(result.confusion_matrix[2][NUM_CLASSES], 1);
+        assert_eq!(result.confusion_matrix[4][0], 1);
+        assert_eq!(result.confusion_matrix[2][4], 1);
     }
 }

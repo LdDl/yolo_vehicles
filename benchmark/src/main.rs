@@ -10,8 +10,8 @@ use std::path::{Path, PathBuf};
 
 use benchmark::{benchmark_speed, run_map_evaluation, run_map_evaluation_debug};
 use types::{
-    BenchmarkResult, PerClassMetrics, CLASSES, CONF_THRESHOLD, IOU_THRESHOLD, NET_HEIGHT,
-    NET_WIDTH, NMS_THRESHOLD, NUM_CLASSES,
+    BenchmarkResult, PerClassMetrics, Task, CONF_THRESHOLD, IOU_THRESHOLD, NET_HEIGHT, NET_WIDTH,
+    NMS_THRESHOLD,
 };
 
 #[derive(Parser, Debug)]
@@ -21,6 +21,18 @@ use types::{
 #[command(group(clap::ArgGroup::new("input").required(true).multiple(true)
     .args(["image", "val_images"])))]
 struct Args {
+    /// Select class names and ONNX output layout
+    #[arg(long, value_enum, default_value_t = Task::Vehicles)]
+    task: Task,
+
+    /// Static ONNX input width
+    #[arg(long, default_value_t = NET_WIDTH as u32, value_parser = clap::value_parser!(u32).range(1..))]
+    width: u32,
+
+    /// Static ONNX input height
+    #[arg(long, default_value_t = NET_HEIGHT as u32, value_parser = clap::value_parser!(u32).range(1..))]
+    height: u32,
+
     /// Path to test image (for speed benchmark)
     #[arg(short, long)]
     image: Option<PathBuf>,
@@ -49,7 +61,7 @@ struct Args {
     #[arg(long)]
     v4_onnx: Option<PathBuf>,
 
-    /// Path to YOLOv5nu ONNX model (.onnx), with output [1, 8, N]
+    /// Path to YOLOv5nu ONNX model (.onnx), with output [1, 4 + classes, N]
     #[arg(long)]
     v5_onnx: Option<PathBuf>,
 
@@ -108,13 +120,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             results.push(benchmark_model(name, path, &args, &speed_image)?);
         }
     }
-    print_summary(&results, backend_name, args.detailed);
+    print_summary(&results, backend_name, &args);
     Ok(())
 }
 
 fn print_header() {
     println!("+----------------------------------------------------------+");
-    println!("|        YOLO Vehicles Detection Benchmark                 |");
+    println!("|        YOLO Detection Benchmark                          |");
     println!("+----------------------------------------------------------+");
     println!();
 }
@@ -122,7 +134,12 @@ fn print_header() {
 fn print_config(args: &Args, backend_name: &str) {
     println!("Configuration:");
     println!("  Backend: {}", backend_name);
-    println!("  Input size: {}x{}", NET_WIDTH, NET_HEIGHT);
+    println!("  Input size: {}x{}", args.width, args.height);
+    println!(
+        "  Task: {:?}; classes: {:?}",
+        args.task,
+        args.task.classes()
+    );
     println!("  Confidence threshold: {}", CONF_THRESHOLD);
     println!("  NMS threshold: {}", NMS_THRESHOLD);
     println!("  IoU threshold (mAP): {}", IOU_THRESHOLD);
@@ -164,7 +181,13 @@ fn benchmark_model(
 ) -> Result<BenchmarkResult, Box<dyn std::error::Error>> {
     println!("\n[{}]", model_name);
     println!("  Loading model: {}", onnx.display());
-    let mut model = load_model(onnx, args.cuda)?;
+    let mut model = load_model(
+        onnx,
+        args.cuda,
+        args.width,
+        args.height,
+        args.task.classes().len(),
+    )?;
 
     let mut result = BenchmarkResult::new(model_name, args.iterations);
 
@@ -184,9 +207,21 @@ fn benchmark_model(
     // mAP evaluation
     if let (Some(ref val_img), Some(ref val_lbl)) = (&args.val_images, &args.val_labels) {
         let map_result = if args.debug {
-            run_map_evaluation_debug(model.as_mut(), val_img, val_lbl, args.max_images)?
+            run_map_evaluation_debug(
+                model.as_mut(),
+                val_img,
+                val_lbl,
+                args.max_images,
+                args.task.classes().len(),
+            )?
         } else {
-            run_map_evaluation(model.as_mut(), val_img, val_lbl, args.max_images)?
+            run_map_evaluation(
+                model.as_mut(),
+                val_img,
+                val_lbl,
+                args.max_images,
+                args.task.classes().len(),
+            )?
         };
 
         // Store detailed metrics for summary output
@@ -217,21 +252,22 @@ fn benchmark_model(
     Ok(result)
 }
 
-fn print_summary(results: &[BenchmarkResult], backend_name: &str, detailed: bool) {
+fn print_summary(results: &[BenchmarkResult], backend_name: &str, args: &Args) {
+    let classes = args.task.classes();
     println!("\n");
     println!("+----------------------------------------------------------+");
     println!("|                    BENCHMARK SUMMARY                     |");
     println!("+----------------------------------------------------------+");
 
     for result in results {
-        result.print();
+        result.print(classes);
     }
 
     // Comparison table
     if results.len() > 1 {
         println!(
             "\n\nComparison ({}x{}, {}):",
-            NET_WIDTH, NET_HEIGHT, backend_name
+            args.width, args.height, backend_name
         );
         println!("{:-<75}", "");
         println!(
@@ -265,7 +301,7 @@ fn print_summary(results: &[BenchmarkResult], backend_name: &str, detailed: bool
     }
 
     // Detailed metrics (confusion matrix and F1 scores) for each model
-    if detailed {
+    if args.detailed {
         for result in results {
             if let (Some(ref matrix), Some(ref metrics)) =
                 (&result.confusion_matrix, &result.class_metrics)
@@ -276,7 +312,7 @@ fn print_summary(results: &[BenchmarkResult], backend_name: &str, detailed: bool
 
                 // Print confusion matrix
                 println!("\nConfusion Matrix:");
-                let classes_with_bg: Vec<&str> = CLASSES
+                let classes_with_bg: Vec<&str> = classes
                     .iter()
                     .copied()
                     .chain(std::iter::once("BG"))
@@ -312,7 +348,7 @@ fn print_summary(results: &[BenchmarkResult], backend_name: &str, detailed: bool
                 let mut total_fn = 0usize;
                 let mut f1_sum = 0.0f64;
 
-                for i in 0..NUM_CLASSES {
+                for i in 0..classes.len() {
                     let tp = metrics.tp[i];
                     let fp = metrics.fp[i];
                     let fn_ = metrics.fn_[i];
@@ -339,7 +375,7 @@ fn print_summary(results: &[BenchmarkResult], backend_name: &str, detailed: bool
 
                     println!(
                         "{:>12} {:>8} {:>8} {:>8} {:>10.2}% {:>10.2}% {:>10.2}%",
-                        CLASSES[i],
+                        classes[i],
                         tp,
                         fp,
                         fn_,
@@ -364,7 +400,7 @@ fn print_summary(results: &[BenchmarkResult], backend_name: &str, detailed: bool
                 } else {
                     0.0
                 };
-                let macro_f1 = f1_sum / NUM_CLASSES as f64;
+                let macro_f1 = f1_sum / classes.len() as f64;
 
                 println!("{}", "-".repeat(78));
                 println!(
