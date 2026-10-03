@@ -161,12 +161,10 @@ Use **Python 3.12** for training. Dataset preparation alone needs Python 3.10+ a
 python3.12 -m venv .venv
 source .venv/bin/activate
 python3 -m pip install --upgrade pip
-python3 -m pip install torch==2.6.0+cu124 torchvision==0.21.0+cu124 \
-  --index-url https://download.pytorch.org/whl/cu124
-python3 -m pip install -r requirements.txt
+python3 -m pip install -r requirements-cu124.txt
 ```
 
-These PyTorch packages use CUDA 12.4. Check that the GPU is available:
+`requirements-cu124.txt` installs the training and export dependencies with PyTorch 2.6.0 and torchvision 0.21.0 built for CUDA 12.4. The base `requirements.txt` also pins these versions, while the CUDA-specific file selects the exact `+cu124` builds. Check that the GPU is available:
 
 ```bash
 nvidia-smi

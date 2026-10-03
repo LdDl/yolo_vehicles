@@ -109,10 +109,10 @@ To start from random initialization, add `--scratch` to a fresh run. Existing ru
 
 ### Ultralytics
 
-Install the common training dependencies using the [main README](../README.md#1-install-dependencies).
+In the active `.venv-plates` environment, install the common training dependencies with the pinned CUDA 12.4 builds of PyTorch 2.6.0 and torchvision 0.21.0. See the [main README](../README.md#1-install-dependencies) for the GPU check.
 
 ```bash
-python3 -m pip install -r requirements.txt
+python3 -m pip install -r requirements-cu124.txt
 ```
 
 ```bash
