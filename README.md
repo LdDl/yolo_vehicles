@@ -111,7 +111,7 @@ See [docs/datasets.md](docs/datasets.md) for class mappings, filtering, and clea
 
 ## License plate detection
 
-A separate [plate detection workflow](plates/README.md) uses my [Russian license plate dataset](https://www.kaggle.com/datasets/dimahkiin/russian-license-plates-5-class-detection) with five categories: civilian, taxi, military, police and diplomatic. It includes dataset preparation, training configs and comparison through the same Rust benchmark with `--task plates`. This is the detection stage of a planned vehicle -> plate -> OCR cascade; The [OCR workflow](ocr/README.md) adds individual character detection at 224x64; full-number decoding is not implemented yet. See the [plate benchmark results](plates/README.md#benchmark-results) for the current six-model validation comparison at 320x192.
+A separate [plate detection workflow](plates/README.md) uses my [Russian license plate dataset](https://www.kaggle.com/datasets/dimahkiin/russian-license-plates-5-class-detection) with five categories: civilian, taxi, military, police and diplomatic. It includes dataset preparation, training configs and comparison through the same Rust benchmark with `--task plates`. This is the detection stage of a planned vehicle -> plate -> OCR cascade. The [OCR workflow](ocr/README.md) adds preparation of my [23-class character dataset](https://www.kaggle.com/datasets/dimahkiin/russian-license-plate-characters-23-classes), training and comparison at 224x64 with `--task ocr`; full-number decoding is not implemented yet. See the [plate benchmark results](plates/README.md#benchmark-results) for the current six-model validation comparison at 320x192.
 
 ## Project Structure
 
