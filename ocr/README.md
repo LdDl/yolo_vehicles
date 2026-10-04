@@ -2,7 +2,8 @@
 
 The third stage of the vehicle -> plate -> OCR cascade: detect individual characters inside a cropped license plate. The initial comparison uses YOLOv3-tiny, YOLOv4-tiny, YOLOv5nu, YOLOv8n, YOLOv9t and YOLO11n at **224x64**, width x height, with letterbox. Full-number decoding, row ordering and transcription metrics are not implemented yet.
 
-Dataset: my [Russian license plate characters: 23 classes](https://www.kaggle.com/datasets/dimahkiin/russian-license-plate-characters-23-classes). It contains plate crops with individual character boxes, including partial plates, multiple visible plates and backgrounds.
+Dataset on Kaggle: my [Russian license plate characters: 23 classes](https://www.kaggle.com/datasets/dimahkiin/russian-license-plate-characters-23-classes). It contains plate crops with individual character boxes, including partial plates, multiple visible plates and backgrounds.
+
 
 ## Table of contents
 
