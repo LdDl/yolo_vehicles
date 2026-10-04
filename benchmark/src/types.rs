@@ -1,7 +1,20 @@
 use std::time::Duration;
 
 pub const CLASSES: [&str; 4] = ["car", "motorbike", "bus", "truck"];
-pub const NUM_CLASSES: usize = 4;
+#[derive(clap::ValueEnum, Clone, Copy, Debug)]
+pub enum Task {
+    Vehicles,
+    Plates,
+}
+
+impl Task {
+    pub fn classes(self) -> &'static [&'static str] {
+        match self {
+            Self::Vehicles => &CLASSES,
+            Self::Plates => &["civilian", "taxi", "military", "police", "diplomatic"],
+        }
+    }
+}
 pub const NET_WIDTH: i32 = 416;
 pub const NET_HEIGHT: i32 = 256;
 pub const CONF_THRESHOLD: f32 = 0.25;
@@ -69,7 +82,7 @@ impl BenchmarkResult {
         }
     }
 
-    pub fn print(&self) {
+    pub fn print(&self, classes: &[&str]) {
         println!("\n{}", "=".repeat(50));
         println!("Model: {}", self.model_name);
         println!("{}", "=".repeat(50));
@@ -87,7 +100,7 @@ impl BenchmarkResult {
         if let Some(ref aps) = self.per_class_ap {
             println!("\nPer-class AP@0.50:");
             for (i, ap) in aps.iter().enumerate() {
-                println!("  {}: {:.2}%", CLASSES[i], ap * 100.0);
+                println!("  {}: {:.2}%", classes[i], ap * 100.0);
             }
         }
     }

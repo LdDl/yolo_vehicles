@@ -5,7 +5,7 @@ use od_opencv::{BBox, ImageBuffer, ObjectDetector};
 use ort::session::{builder::GraphOptimizationLevel, Session};
 use ort::value::{TensorElementType, ValueType};
 
-use crate::types::{Detection, NET_HEIGHT, NET_WIDTH, NUM_CLASSES};
+use crate::types::Detection;
 
 pub type YoloModel = dyn ObjectDetector<Input = ImageBuffer, Error = OrtModelError>;
 
@@ -16,7 +16,13 @@ pub fn check_device(cuda: bool) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-pub fn load_model(path: &Path, cuda: bool) -> Result<Box<YoloModel>, Box<dyn std::error::Error>> {
+pub fn load_model(
+    path: &Path,
+    cuda: bool,
+    width: u32,
+    height: u32,
+    num_classes: usize,
+) -> Result<Box<YoloModel>, Box<dyn std::error::Error>> {
     check_device(cuda)?;
     let mut builder =
         Session::builder()?.with_optimization_level(GraphOptimizationLevel::Level3)?;
@@ -36,10 +42,11 @@ pub fn load_model(path: &Path, cuda: bool) -> Result<Box<YoloModel>, Box<dyn std
     }
     let input = session.inputs()[0].dtype();
     let output = session.outputs()[0].dtype();
-    validate_interface(input, output).map_err(|error| format!("{}: {error}", path.display()))?;
+    validate_interface(input, output, width, height, num_classes)
+        .map_err(|error| format!("{}: {error}", path.display()))?;
     println!("  ONNX input: {input:?}");
     println!("  ONNX output: {output:?}");
-    let size = (NET_WIDTH as u32, NET_HEIGHT as u32);
+    let size = (width, height);
     Ok(Box::new(ModelUltralyticsOrt::from_session(
         session,
         size,
@@ -47,7 +54,13 @@ pub fn load_model(path: &Path, cuda: bool) -> Result<Box<YoloModel>, Box<dyn std
     )))
 }
 
-fn validate_interface(input: &ValueType, output: &ValueType) -> Result<(), String> {
+fn validate_interface(
+    input: &ValueType,
+    output: &ValueType,
+    width: u32,
+    height: u32,
+    num_classes: usize,
+) -> Result<(), String> {
     let ValueType::Tensor {
         ty: TensorElementType::Float32,
         shape,
@@ -56,9 +69,9 @@ fn validate_interface(input: &ValueType, output: &ValueType) -> Result<(), Strin
     else {
         return Err("expected float32 input".into());
     };
-    if shape.as_ref() != [1, 3, NET_HEIGHT as i64, NET_WIDTH as i64] {
+    if shape.as_ref() != [1, 3, height as i64, width as i64] {
         return Err(format!(
-            "expected static input [1, 3, {NET_HEIGHT}, {NET_WIDTH}], got {shape:?}"
+            "expected static input [1, 3, {height}, {width}], got {shape:?}"
         ));
     }
     let ValueType::Tensor {
@@ -70,10 +83,10 @@ fn validate_interface(input: &ValueType, output: &ValueType) -> Result<(), Strin
         return Err("expected float32 output".into());
     };
     let dims: &[i64] = shape.as_ref();
-    let channels = 4 + NUM_CLASSES as i64;
+    let channels = 4 + num_classes as i64;
     if dims.len() != 3 || dims[0] != 1 || dims[1] != channels || !(dims[2] > 0 || dims[2] == -1) {
         return Err(format!(
-            "expected output [1, {channels}, N] for {NUM_CLASSES} classes, got {shape:?}"
+            "expected output [1, {channels}, N] for {num_classes} classes, got {shape:?}"
         ));
     }
     Ok(())
@@ -132,23 +145,31 @@ mod tests {
     }
 
     #[test]
+    fn accepts_five_classes_at_custom_size_but_rejects_vehicle_model() {
+        let input = tensor(&[1, 3, 192, 320]);
+        assert!(validate_interface(&input, &tensor(&[1, 9, 1260]), 320, 192, 5).is_ok());
+        assert!(validate_interface(&input, &tensor(&[1, 8, 1260]), 320, 192, 5).is_err());
+        assert!(validate_interface(&input, &tensor(&[1, 9, 1260]), 416, 256, 5).is_err());
+    }
+
+    #[test]
     fn checks_input_dimensions_and_class_layout() {
         let input = tensor(&[1, 3, 256, 416]);
-        assert!(validate_interface(&input, &tensor(&[1, 8, 1560])).is_ok());
-        assert!(validate_interface(&input, &tensor(&[1, 8, 2184])).is_ok());
+        assert!(validate_interface(&input, &tensor(&[1, 8, 1560]), 416, 256, 4).is_ok());
+        assert!(validate_interface(&input, &tensor(&[1, 8, 2184]), 416, 256, 4).is_ok());
         for wrong_input in [
             tensor(&[1, 3, 416, 256]),
             tensor(&[1, 3, 960, 960]),
             tensor(&[-1, 3, -1, -1]),
         ] {
-            assert!(validate_interface(&wrong_input, &tensor(&[1, 8, 1560])).is_err());
+            assert!(validate_interface(&wrong_input, &tensor(&[1, 8, 1560]), 416, 256, 4).is_err());
         }
         for wrong_output in [
             tensor(&[1, 84, 2184]),
             tensor(&[1, 300, 6]),
             tensor(&[1, 6552, 9]),
         ] {
-            assert!(validate_interface(&input, &wrong_output).is_err());
+            assert!(validate_interface(&input, &wrong_output, 416, 256, 4).is_err());
         }
     }
 

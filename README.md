@@ -20,6 +20,7 @@ All models use the combined **Junction + MIO-TCD** dataset, the same train/val/t
 - [Download trained models](#download-trained-models)
 - [Classes](#classes)
 - [Datasets](#datasets)
+- [License plate detection](#license-plate-detection)
 - [Project structure](#project-structure)
 - [Quick start](#quick-start)
   - [1. Install dependencies](#1-install-dependencies)
@@ -108,6 +109,10 @@ These are dataset counts, not model results. Each run saves its actual counts to
 
 See [docs/datasets.md](docs/datasets.md) for class mappings, filtering, and cleanup instructions. MIO's original README specifies **CC BY-NC-SA 4.0**; annotation conversion does not change the dataset license.
 
+## License plate detection
+
+A separate [plate detection workflow](plates/README.md) uses my [Russian license plate dataset](https://www.kaggle.com/datasets/dimahkiin/russian-license-plates-5-class-detection) with five categories: civilian, taxi, military, police and diplomatic. It includes dataset preparation, training configs and comparison through the same Rust benchmark with `--task plates`. This is the detection stage of a planned vehicle -> plate -> OCR cascade; OCR is not implemented yet. See the [plate benchmark results](plates/README.md#benchmark-results) for the current six-model validation comparison at 320x192.
+
 ## Project Structure
 
 ```text
@@ -156,12 +161,10 @@ Use **Python 3.12** for training. Dataset preparation alone needs Python 3.10+ a
 python3.12 -m venv .venv
 source .venv/bin/activate
 python3 -m pip install --upgrade pip
-python3 -m pip install torch==2.6.0+cu124 torchvision==0.21.0+cu124 \
-  --index-url https://download.pytorch.org/whl/cu124
-python3 -m pip install -r requirements.txt
+python3 -m pip install -r requirements-cu124.txt
 ```
 
-These PyTorch packages use CUDA 12.4. Check that the GPU is available:
+`requirements-cu124.txt` installs the training and export dependencies with PyTorch 2.6.0 and torchvision 0.21.0 built for CUDA 12.4. The base `requirements.txt` also pins these versions, while the CUDA-specific file selects the exact `+cu124` builds. Check that the GPU is available:
 
 ```bash
 nvidia-smi
