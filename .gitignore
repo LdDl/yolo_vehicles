@@ -1,5 +1,8 @@
 # Dataset sources and generated splits.
 /datasets/
+/ocr/images/
+/ocr/labels/
+/ocr/.ipynb_checkpoints/
 /plates/images/
 /plates/labels/
 /plates/rename_map.csv

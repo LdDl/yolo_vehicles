@@ -2,7 +2,7 @@
 
 Five-class plate detection with YOLOv3-tiny, YOLOv4-tiny, YOLOv5nu, YOLOv8n, YOLOv9t and YOLO11n. Dataset: [Russian license plates: 5-class detection](https://www.kaggle.com/datasets/dimahkiin/russian-license-plates-5-class-detection).
 
-This is the plate detector stage of a planned vehicle -> plate -> OCR cascade. The current dataset contains mixed views, including full vehicles. The commands below train on those published images. Training specifically on vehicle crops will require a separate dataset preparation step that transforms the plate boxes into crop coordinates. OCR needs text annotations and a recognition model; this dataset only provides detection boxes and plate categories.
+This is the plate detector stage of a planned vehicle -> plate -> OCR cascade. The current dataset contains mixed views, including full vehicles. The commands below train on those published images. Training specifically on vehicle crops will require a separate dataset preparation step that transforms the plate boxes into crop coordinates. The separate [OCR workflow](../ocr/README.md) detects individual characters at 224x64. This plate dataset only provides detection boxes and plate categories.
 
 ## Table of contents
 

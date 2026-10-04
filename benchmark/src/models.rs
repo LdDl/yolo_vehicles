@@ -153,6 +153,16 @@ mod tests {
     }
 
     #[test]
+    fn ocr_layout_matches_alphabet_and_rejects_plate_output() {
+        let names: Vec<_> = include_str!("../../ocr/classes.names").lines().collect();
+        assert_eq!(crate::types::Task::Ocr.classes(), names.as_slice());
+        let input = tensor(&[1, 3, 64, 224]);
+        assert!(validate_interface(&input, &tensor(&[1, 27, 210]), 224, 64, names.len()).is_ok());
+        assert!(validate_interface(&input, &tensor(&[1, 9, 210]), 224, 64, names.len()).is_err());
+        assert!(validate_interface(&input, &tensor(&[1, 27, 210]), 192, 64, names.len()).is_err());
+    }
+
+    #[test]
     fn checks_input_dimensions_and_class_layout() {
         let input = tensor(&[1, 3, 256, 416]);
         assert!(validate_interface(&input, &tensor(&[1, 8, 1560]), 416, 256, 4).is_ok());

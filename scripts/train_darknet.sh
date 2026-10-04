@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Train a fresh public-dataset run or resume its existing checkpoint.
+# Train a fresh task-specific run or resume its existing checkpoint.
 set -euo pipefail
 project_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$project_dir"
@@ -7,7 +7,7 @@ model="${1:-}"
 case "$model" in
   v3-tiny) base=yolov3-tiny; cutoff=11 ;;
   v4-tiny) base=yolov4-tiny; cutoff=29 ;;
-  *) printf 'Usage: %s v3-tiny|v4-tiny [--task vehicles|plates] [--resume checkpoint.weights | --scratch]\n' "$0"; exit 1 ;;
+  *) printf 'Usage: %s v3-tiny|v4-tiny [--task vehicles|plates|ocr] [--resume checkpoint.weights | --scratch]\n' "$0"; exit 1 ;;
 esac
 shift
 mode=pretrained
@@ -16,7 +16,7 @@ task=vehicles
 while (( $# )); do
   case "$1" in
     --task)
-      [[ $# -ge 2 && ( $2 == vehicles || $2 == plates ) ]] || { echo 'Expected --task vehicles|plates' >&2; exit 1; }
+      [[ $# -ge 2 && ( $2 == vehicles || $2 == plates || $2 == ocr ) ]] || { echo 'Expected --task vehicles|plates|ocr' >&2; exit 1; }
       task="$2"
       shift 2
       ;;
@@ -35,8 +35,8 @@ while (( $# )); do
   esac
 done
 config_dir="$project_dir/configs"
-if [[ $task == plates ]]; then
-  config_dir="$project_dir/plates/configs"
+if [[ $task != vehicles ]]; then
+  config_dir="$project_dir/$task/configs"
 fi
 command -v darknet >/dev/null
 cfg="$config_dir/${base}-${task}.cfg"
