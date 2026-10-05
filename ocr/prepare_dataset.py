@@ -19,7 +19,7 @@ import yaml
 
 PROJECT = Path(__file__).resolve().parents[1]
 SLUG = "dimahkiin/russian-license-plate-characters-23-classes"
-NAMES = list("0123456789ABCEHKMOPTXYD")
+NAMES = Path(__file__).with_name("classes.names").read_text(encoding="utf-8").splitlines()
 SPLITS = ("train", "val", "test")
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"}
 

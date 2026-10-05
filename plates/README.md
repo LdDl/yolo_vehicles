@@ -44,7 +44,7 @@ Choose the engine matching your device and software stack. For a different confi
 
 ## Classes and splits
 
-Keep all five categories in this order:
+[classes.names](classes.names) stores the five class names in ID order, starting at zero. The preparation script reads this file and writes the same list to `data/generated/plates.names`. Use either file for inference; the generated copy is a local training artifact.
 
 | ID | Class |
 |---|---|
@@ -284,6 +284,7 @@ Compare the initial 320x192 input against other sizes, such as 416x256, using th
 ## Output files
 
 - `plates/`: documentation, preparation script, dependencies and source configs.
+- `plates/classes.names`: class names in ID order, stored in the repository.
 - `datasets/raw/`: downloaded archives; safe to remove after successful extraction.
 - `datasets/plates/`: images and annotations used for training and evaluation; keep these while running experiments.
 - `data/generated/plates.yaml`: Ultralytics dataset paths.

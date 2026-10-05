@@ -25,6 +25,8 @@ The initial alphabet has 23 classes. [classes.names](classes.names) defines the 
 0 1 2 3 4 5 6 7 8 9 A B C E H K M O P T X Y D
 ```
 
+The preparation script reads `ocr/classes.names` and writes the same list to `data/generated/ocr.names`. Use either file for inference; the generated copy is a local training artifact. Plate detection follows the same convention with [plates/classes.names](../plates/classes.names).
+
 Letters use Latin characters. `D` is class 22, reserved for diplomatic plates. The published v1 dataset has no D examples, but the class stays in the dataset YAML, Darknet heads, exported models and benchmark. No D recognition quality can be measured from this version. A change to the alphabet requires matching changes to the annotations, Darknet classes/filters, training configuration and benchmark class list.
 
 Darknet uses 23 classes and 84 filters before each detection layer: `(23 + 5) * 3`. Both training and inference configs use 224x64. Letterbox preserves each crop's proportions. Flipping, mosaic, crop jitter and random input resizing are disabled. Anchors are provisional character-sized values, not fitted to annotations. Batch 64, subdivisions 4 and 46000 iterations with learning-rate drops at 36800/41400 are starting settings, not measured optimal values.

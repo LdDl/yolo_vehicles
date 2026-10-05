@@ -16,7 +16,7 @@ from PIL import Image
 
 PROJECT = Path(__file__).resolve().parents[1]
 SLUG = "dimahkiin/russian-license-plates-5-class-detection"
-NAMES = ["civilian", "taxi", "military", "police", "diplomatic"]
+NAMES = Path(__file__).with_name("classes.names").read_text(encoding="utf-8").splitlines()
 SPLITS = ("train", "val", "test")
 
 
