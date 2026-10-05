@@ -5,6 +5,7 @@ Compare YOLOv3-tiny, YOLOv4-tiny, YOLOv5nu, YOLOv8n, YOLOv9t, and YOLO11n throug
 ## Table of contents
 
 - [Plate detection](#plate-detection)
+- [Character detection](#character-detection)
 - [Before benchmarking](#before-benchmarking)
 - [Build](#build)
 - [CUDA troubleshooting](#cuda-troubleshooting)
@@ -21,6 +22,10 @@ Compare YOLOv3-tiny, YOLOv4-tiny, YOLOv5nu, YOLOv8n, YOLOv9t, and YOLO11n throug
 ## Plate detection
 
 The default task is `--task vehicles` with four classes and 416x256 input. Use `--task plates --width 320 --height 192` for `civilian`, `taxi`, `military`, `police`, `diplomatic`, with ONNX output `[1,9,N]`. Input dimensions are configurable through `--width` and `--height` and must match the static ONNX input. All models in a comparison use the same task and dimensions. See the [plate workflow](../plates/README.md#benchmark) for preparation, training and comparison commands. The vehicle commands below keep their existing defaults.
+
+## Character detection
+
+Use `--task ocr --width 224 --height 64` for individual license plate characters. The 23 class IDs follow [ocr/classes.names](../ocr/classes.names); float32 ONNX output must be `[1,27,N]`. See the [OCR workflow](../ocr/README.md) for training, export and comparison commands. This evaluates character boxes and classes, not full-number transcription accuracy.
 
 ## Before benchmarking
 

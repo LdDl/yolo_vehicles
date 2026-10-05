@@ -1,15 +1,18 @@
 use std::time::Duration;
 
 pub const CLASSES: [&str; 4] = ["car", "motorbike", "bus", "truck"];
+pub const OCR_CLASSES: [&str; 23] = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "A", "B", "C", "E", "H", "K", "M", "O", "P", "T", "X", "Y", "D"];
 #[derive(clap::ValueEnum, Clone, Copy, Debug)]
 pub enum Task {
     Vehicles,
     Plates,
+    Ocr,
 }
 
 impl Task {
     pub fn classes(self) -> &'static [&'static str] {
         match self {
+            Self::Ocr => &OCR_CLASSES,
             Self::Vehicles => &CLASSES,
             Self::Plates => &["civilian", "taxi", "military", "police", "diplomatic"],
         }

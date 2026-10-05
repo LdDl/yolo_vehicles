@@ -43,6 +43,8 @@ class PlateSetupTests(unittest.TestCase):
         output = self.root / "generated"
         prep.configure(self.dataset, output, self.root / "weights")
         config = yaml.safe_load((output / "plates.yaml").read_text())
+        self.assertEqual(prep.NAMES, ["civilian", "taxi", "military", "police", "diplomatic"])
+        self.assertEqual((output / "plates.names").read_bytes(), (PROJECT / "plates/classes.names").read_bytes())
         self.assertEqual(config["names"][4], "diplomatic")
         self.assertEqual((self.dataset / "images/test/0.txt").read_text(), "")
         self.assertIn("plates-test.txt", (output / "plates-test.data").read_text())

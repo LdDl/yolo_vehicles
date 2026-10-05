@@ -43,11 +43,18 @@ All models use the combined **Junction + MIO-TCD** dataset, the same train/val/t
 
 ## Download trained models
 
-Ready-to-use models trained on **Junction + MIO-TCD** are available in [release v0.0.3](https://github.com/LdDl/yolo_vehicles/releases/tag/v0.0.3). Download them to run inference without training the models yourself.
+Choose the release for the detection task:
+
+| Task | Release | Input (width x height) | Classes | Filename suffix |
+| :--- | :--- | :--- | :--- | :--- |
+| Vehicles, trained on Junction + MIO-TCD | [v0.0.3](https://github.com/LdDl/yolo_vehicles/releases/tag/v0.0.3) | 416x256 | car, motorbike, bus, truck | `-vehicles` |
+| Russian license plates | [v0.0.4](https://github.com/LdDl/yolo_vehicles/releases/tag/v0.0.4) | 320x192 | civilian, taxi, military, police, diplomatic | `-plates` |
+
+Release v0.0.3 remains the vehicle model release; v0.0.4 contains detectors trained specifically for Russian license plates. The `plates` models and their five categories are intended for Russian license plates only. Both releases include:
 
 - Best checkpoints for all six models: `.weights` for Darknet and `.pt` for Ultralytics.
-- ONNX exports with input `[1,3,256,416]`, batch 1, and four classes.
-- Darknet training and inference configs, `vehicles.names`, and `SHA256SUMS`.
+- ONNX exports with batch 1: `[1,3,256,416]` for vehicles and `[1,3,192,320]` for plates.
+- Darknet training and inference configs, the corresponding `vehicles.names` or `plates.names`, and `SHA256SUMS`.
 - TensorRT `.engine` files built with FP16 enabled for all six models on each configuration below.
 
 | Device | CUDA | cuDNN | TensorRT |
@@ -60,11 +67,15 @@ Engine filenames include the model, device, software versions and precision. For
 ```text
 yolov8n-vehicles_best_jetson_nano_cuda-10.2.300_cudnn-8.2.1.32_trt-8.2.1.8_fp16.engine
 yolov8n-vehicles_best_jetson_orin_nano_cuda-12.6.68_cudnn-9.3.0_trt-10.3.0.30_fp16.engine
+yolov8n-plates_best_jetson_nano_cuda-10.2.300_cudnn-8.2.1.32_trt-8.2.1.8_fp16.engine
+yolov8n-plates_best_jetson_orin_nano_cuda-12.6.68_cudnn-9.3.0_trt-10.3.0.30_fp16.engine
 ```
 
 Choose the engine matching your device and software stack. For a different configuration, build an engine from the ONNX file on the target device. Jetson Nano and Jetson Orin Nano engines are separate builds and are not interchangeable.
 
 The Rust benchmark below uses ONNX files. Release assets have model-specific names, such as `yolov5nu-vehicles_best.onnx`; adjust the benchmark paths to where you downloaded them.
+
+See the [plate model downloads](plates/README.md#download-trained-models) and [Jetson TensorRT measurements](plates/README.md#jetson-tensorrt-measurements) for the plate detectors.
 
 >Note: I want to mention again that traditional YOLOv3 and v4 have been converted ONNX (to the YOLOv8 output format) via [`darknet2onnx`](https://github.com/LdDl/darknet2onnx) and then to TensorRT engines.
 
@@ -111,7 +122,10 @@ See [docs/datasets.md](docs/datasets.md) for class mappings, filtering, and clea
 
 ## License plate detection
 
-A separate [plate detection workflow](plates/README.md) uses my [Russian license plate dataset](https://www.kaggle.com/datasets/dimahkiin/russian-license-plates-5-class-detection) with five categories: civilian, taxi, military, police and diplomatic. It includes dataset preparation, training configs and comparison through the same Rust benchmark with `--task plates`. This is the detection stage of a planned vehicle -> plate -> OCR cascade; OCR is not implemented yet. See the [plate benchmark results](plates/README.md#benchmark-results) for the current six-model validation comparison at 320x192.
+My Russian license plate datasets are available on Kaggle for the planned vehicle -> plate -> OCR cascade:
+
+- **Plate detection:** [Russian license plates: 5-class detection](https://www.kaggle.com/datasets/dimahkiin/russian-license-plates-5-class-detection). Five categories: civilian, taxi, military, police and diplomatic. The [plate workflow](plates/README.md) includes preparation, training and benchmarking at 320x192 with `--task plates`. Trained weights, ONNX exports and Jetson engines are available in [v0.0.4](https://github.com/LdDl/yolo_vehicles/releases/tag/v0.0.4); see the [benchmark results](plates/README.md#benchmark-results).
+- **Character detection (OCR):** [Russian license plate characters: 23 classes](https://www.kaggle.com/datasets/dimahkiin/russian-license-plate-characters-23-classes). The [OCR workflow](ocr/README.md) includes preparation, training and benchmarking at 224x64 with `--task ocr`. See the [six-model OCR benchmark results](ocr/README.md#benchmark-results). Trained OCR weights are not published yet. Full-number decoding is not implemented yet.
 
 ## Project Structure
 

@@ -1,11 +1,12 @@
 # Russian license plate detection
 
-Five-class plate detection with YOLOv3-tiny, YOLOv4-tiny, YOLOv5nu, YOLOv8n, YOLOv9t and YOLO11n. Dataset: [Russian license plates: 5-class detection](https://www.kaggle.com/datasets/dimahkiin/russian-license-plates-5-class-detection).
+Five-class detection for **Russian license plates only**, using YOLOv3-tiny, YOLOv4-tiny, YOLOv5nu, YOLOv8n, YOLOv9t and YOLO11n. The models are trained on Russian plates, and the five categories refer to Russian plate types. Dataset on Kaggle: [Russian license plates: 5-class detection](https://www.kaggle.com/datasets/dimahkiin/russian-license-plates-5-class-detection).
 
-This is the plate detector stage of a planned vehicle -> plate -> OCR cascade. The current dataset contains mixed views, including full vehicles. The commands below train on those published images. Training specifically on vehicle crops will require a separate dataset preparation step that transforms the plate boxes into crop coordinates. OCR needs text annotations and a recognition model; this dataset only provides detection boxes and plate categories.
+This is the plate detector stage of a planned vehicle -> plate -> OCR cascade. The current dataset contains mixed views, including full vehicles. The commands below train on those published images. Training specifically on vehicle crops will require a separate dataset preparation step that transforms the plate boxes into crop coordinates. The separate [OCR workflow](../ocr/README.md) detects individual characters at 224x64. This plate dataset only provides detection boxes and plate categories.
 
 ## Table of contents
 
+- [Download trained models](#download-trained-models)
 - [Classes and splits](#classes-and-splits)
 - [Download and prepare](#download-and-prepare)
 - [Train models](#train-models)
@@ -14,12 +15,36 @@ This is the plate detector stage of a planned vehicle -> plate -> OCR cascade. T
 - [Export Darknet to ONNX](#export-darknet-to-onnx)
 - [Benchmark](#benchmark)
 - [Benchmark results](#benchmark-results)
+  - [Jetson TensorRT measurements](#jetson-tensorrt-measurements)
 - [Input size experiments](#input-size-experiments)
 - [Output files](#output-files)
 
+## Download trained models
+
+Ready-to-use plate detectors are available in [release v0.0.4](https://github.com/LdDl/yolo_vehicles/releases/tag/v0.0.4). It includes YOLOv3-tiny, YOLOv4-tiny, YOLOv5nu, YOLOv8n, YOLOv9t and YOLO11n with five classes in the order below. Vehicle detection models remain in [release v0.0.3](https://github.com/LdDl/yolo_vehicles/releases/tag/v0.0.3).
+
+- Best checkpoints: `.weights` for Darknet and `.pt` for Ultralytics.
+- Float32 ONNX exports with input `[1,3,192,320]` and output `[1,9,N]`, without built-in NMS.
+- Darknet training and inference configs, `plates.names` and `SHA256SUMS`.
+- Twelve TensorRT engines built with FP16 enabled: one per model for each configuration below.
+
+| Device | CUDA | cuDNN | TensorRT |
+| :--- | :--- | :--- | :--- |
+| Jetson Nano | 10.2.300 | 8.2.1.32 | 8.2.1.8 |
+| Jetson Orin Nano | 12.6.68 | 9.3.0 | 10.3.0.30 |
+
+Engine names identify the model and target configuration. For example:
+
+```text
+yolov8n-plates_best_jetson_nano_cuda-10.2.300_cudnn-8.2.1.32_trt-8.2.1.8_fp16.engine
+yolov8n-plates_best_jetson_orin_nano_cuda-12.6.68_cudnn-9.3.0_trt-10.3.0.30_fp16.engine
+```
+
+Choose the engine matching your device and software stack. For a different configuration, build from ONNX on the target device. The Rust benchmark uses ONNX; release files have names such as `yolov8n-plates_best.onnx`, so adjust the model paths in the commands below to match your downloads.
+
 ## Classes and splits
 
-Keep all five categories in this order:
+[classes.names](classes.names) stores the five class names in ID order, starting at zero. The preparation script reads this file and writes the same list to `data/generated/plates.names`. Use either file for inference; the generated copy is a local training artifact.
 
 | ID | Class |
 |---|---|
@@ -235,6 +260,23 @@ YOLOv4-tiny has the lowest mean latency in this speed run: 1.52 ms. YOLO11n take
 
 These results describe standalone plate detection on the published validation images. They do not measure the complete vehicle -> plate -> OCR cascade, performance on background-only frames or Jetson Nano speed. Evaluate the selected models on the held-out test split and representative vehicle crops before choosing a deployment model.
 
+### Jetson TensorRT measurements
+
+Short `trtexec` runs on 2026-10-04 using the v0.0.4 plate models at 320x192, batch 1, built with `--fp16`. Device and software versions are listed in [Download trained models](#download-trained-models). Each measurement ran for approximately three seconds.
+
+| Model | Nano throughput (qps) | Orin Nano throughput (qps) | Nano mean latency (ms) | Orin Nano mean latency (ms) |
+| :--- | ---: | ---: | ---: | ---: |
+| YOLOv3-tiny | 112.71 | 1344.14 | 8.86 | 0.80 |
+| YOLOv4-tiny | 105.37 | 1265.93 | 9.48 | 0.84 |
+| YOLOv5nu | 108.21 | 717.72 | 9.23 | 1.45 |
+| YOLOv8n | 104.84 | 679.67 | 9.51 | 1.53 |
+| YOLOv9t | 69.80 | 339.21 | 14.29 | 3.00 |
+| YOLO11n | 98.78 | 550.31 | 10.10 | 1.87 |
+
+Throughput counts inference queries per second. Mean latency is the reported `Latency`, including host-to-device transfer, GPU computation and device-to-host transfer. `trtexec` overlaps queries, so throughput need not equal 1000 divided by mean latency. These measurements exclude image preprocessing, external NMS, video decoding and the rest of the cascade; they are separate from the Rust detector benchmark above. See [NVIDIA's metric definitions](https://docs.nvidia.com/deeplearning/tensorrt/10.x.x/performance/benchmarking.html).
+
+YOLOv3-tiny had the highest throughput on both devices in these runs. Power modes and clock settings were not recorded, and the runs are short; treat the numbers as measurements of these particular builds and runs. Detection quality of the FP16 engines has not been evaluated here.
+
 ## Input size experiments
 
 Compare the initial 320x192 input against other sizes, such as 416x256, using the same validation split and device. Keep the baseline run intact. For Darknet, update both the training and inference configs consistently and re-export; for Ultralytics, use `--imgsz 416 --export-width 416 --export-height 256` with a fresh output directory for a 416x256 experiment. Training uses a single `imgsz` plus rectangular batching; ONNX export fixes the exact dimensions. Set benchmark `--width 416 --height 256` to match that experiment. A benchmark flag does not resize the ONNX graph; mismatched inputs are rejected.
@@ -242,6 +284,7 @@ Compare the initial 320x192 input against other sizes, such as 416x256, using th
 ## Output files
 
 - `plates/`: documentation, preparation script, dependencies and source configs.
+- `plates/classes.names`: class names in ID order, stored in the repository.
 - `datasets/raw/`: downloaded archives; safe to remove after successful extraction.
 - `datasets/plates/`: images and annotations used for training and evaluation; keep these while running experiments.
 - `data/generated/plates.yaml`: Ultralytics dataset paths.
