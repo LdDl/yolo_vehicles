@@ -4,7 +4,6 @@ The third stage of the vehicle -> plate -> OCR cascade: detect individual charac
 
 Dataset on Kaggle: my [Russian license plate characters: 23 classes](https://www.kaggle.com/datasets/dimahkiin/russian-license-plate-characters-23-classes). It contains plate crops with individual character boxes, including partial plates, multiple visible plates and backgrounds.
 
-
 ## Table of contents
 
 - [Model settings](#model-settings)
@@ -15,6 +14,7 @@ Dataset on Kaggle: my [Russian license plate characters: 23 classes](https://www
   - [Ultralytics](#ultralytics)
 - [Export to ONNX](#export-to-onnx)
 - [Benchmark](#benchmark)
+- [Benchmark results](#benchmark-results)
 - [Output files](#output-files)
 
 ## Model settings
@@ -195,7 +195,81 @@ benchmark/target/release/benchmark --cuda --task ocr --width 224 --height 64 \
   2>&1 | tee benchmark-results/ocr/speed-cuda.log
 ```
 
-The evaluator measures character AP, precision, recall and detector speed. It does not assemble plate strings or compute character error rate or exact plate accuracy. Speed covers preprocessing, inference and postprocessing, excluding image loading. Use the same image and device for every model. See [AP conventions](../benchmark/README.md#reading-ap-results) before comparing its mAP with training logs. No OCR quality or speed results have been measured yet.
+The evaluator measures character AP, precision, recall and detector speed. It does not assemble plate strings or compute character error rate or exact plate accuracy. Speed covers preprocessing, inference and postprocessing, excluding image loading. Use the same image and device for every model. See [AP conventions](../benchmark/README.md#reading-ap-results) before comparing its mAP with training logs. See the [benchmark results](#benchmark-results) below for the measured checkpoints.
+
+## Benchmark results
+
+Validation results on my **Russian license plate character dataset**, measured on 2026-10-05. All six models were evaluated on the same 5,000 validation crops. Speed was measured separately on one fixed crop with warmup. Test-set results are not available yet.
+
+| Model | mAP@0.50 | Mean time (ms) | FPS |
+| :--- | ---: | ---: | ---: |
+| YOLOv3-tiny | 54.50% | 1.01 | 992.58 |
+| YOLOv4-tiny | 65.12% | **0.985** | **1015.35** |
+| YOLOv5nu | 85.47% | 1.30 | 769.75 |
+| YOLOv8n | 85.88% | 1.31 | 760.46 |
+| YOLOv9t | **85.91%** | 2.98 | 335.64 |
+| YOLO11n | 85.07% | 1.51 | 663.63 |
+
+> **Note on timing:** Accuracy comes from the full validation run. Timing comes from a separate run with 50 warmup calls and 1,000 measured calls per model. It includes preprocessing, inference and postprocessing, excluding image loading. FPS describes this detector call on the measured GPU and crop, not a complete video stream or Jetson performance.
+
+**Detection metrics at confidence 0.25:**
+
+| Model | Precision (micro) | Recall (micro) | F1 (micro) |
+| :--- | ---: | ---: | ---: |
+| YOLOv3-tiny | 77.64% | 67.38% | 72.15% |
+| YOLOv4-tiny | 81.73% | 75.85% | 78.68% |
+| YOLOv5nu | 92.56% | 89.84% | 91.18% |
+| YOLOv8n | 92.43% | 90.18% | 91.29% |
+| YOLOv9t | 92.52% | 90.28% | 91.39% |
+| YOLO11n | 92.68% | 89.80% | 91.22% |
+
+<details>
+<summary>Per-character AP@0.50</summary>
+
+| Character | YOLOv3-tiny | YOLOv4-tiny | YOLOv5nu | YOLOv8n | YOLOv9t | YOLO11n |
+| :--- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 0 | 58.55% | 67.17% | 81.63% | 81.66% | 81.71% | 81.66% |
+| 1 | 67.07% | 79.17% | 90.06% | 90.05% | 90.12% | 90.03% |
+| 2 | 58.45% | 68.15% | 90.43% | 81.78% | 90.49% | 81.79% |
+| 3 | 59.19% | 68.11% | 81.48% | 81.53% | 81.47% | 81.50% |
+| 4 | 57.11% | 64.40% | 81.77% | 90.55% | 90.52% | 81.80% |
+| 5 | 60.63% | 68.14% | 90.64% | 90.68% | 90.60% | 90.58% |
+| 6 | 59.55% | 69.71% | 81.73% | 81.73% | 81.72% | 81.71% |
+| 7 | 68.33% | 78.21% | 90.25% | 90.26% | 90.30% | 90.24% |
+| 8 | 58.30% | 67.56% | 90.43% | 90.51% | 90.48% | 90.47% |
+| 9 | 58.53% | 67.88% | 81.74% | 81.72% | 81.74% | 81.72% |
+| A | 46.55% | 63.36% | 90.52% | 90.43% | 90.45% | 90.37% |
+| B | 39.93% | 56.58% | 80.80% | 80.84% | 80.90% | 80.90% |
+| C | 45.83% | 63.85% | 90.07% | 90.06% | 90.22% | 90.06% |
+| E | 43.35% | 54.38% | 81.00% | 81.23% | 81.02% | 80.93% |
+| H | 46.47% | 65.01% | 81.20% | 81.40% | 81.26% | 81.18% |
+| K | 48.49% | 59.53% | 81.48% | 89.75% | 81.55% | 81.46% |
+| M | 54.62% | 65.84% | 81.55% | 81.60% | 81.60% | 81.60% |
+| O | 44.92% | 54.26% | 81.35% | 81.26% | 81.45% | 81.41% |
+| P | 66.18% | 68.77% | 90.20% | 90.24% | 90.23% | 90.30% |
+| T | 64.34% | 67.17% | 90.72% | 90.69% | 90.72% | 90.74% |
+| X | 46.49% | 57.19% | 90.38% | 90.44% | 90.38% | 90.30% |
+| Y | 46.14% | 58.10% | 80.95% | 80.97% | 80.99% | 80.91% |
+| D | N/A | N/A | N/A | N/A | N/A | N/A |
+
+`D` has no ground-truth examples. The log prints 0.00% for this class, but its AP cannot be evaluated and it is excluded from the reported mAP.
+
+</details>
+
+**Measurement setup:**
+
+- NVIDIA GeForce RTX 5060 Ti, AMD Ryzen 7 7800X3D, ONNX Runtime 1.29.0 / CUDA (system build).
+- Float32 ONNX input `[1,3,64,224]`, batch 1, 224x64 with letterbox. Confidence 0.25, NMS IoU 0.45, evaluation IoU 0.50.
+- Accuracy: all 5,000 validation crops, 39,169 annotated characters and 8 background crops. The model has 23 output classes; mAP averages the 22 classes represented in the ground truth.
+- AP uses 11-point interpolation after confidence filtering. It is not directly interchangeable with Darknet or Ultralytics mAP. Micro precision, recall and F1 aggregate object counts across classes.
+- Speed: 50 warmup calls and 1,000 timed calls on `images/val/00112bb2-6418-4bd9-b72e-eb1172742026.jpeg` (137x41). The local dataset root was `/mnt/bigdisk/userspace/plates-ocr-dataset`; the complete image path is recorded in `benchmark-results/ocr/speed-image.txt`.
+- Source logs: `benchmark-results/ocr/val-cuda.log` and `benchmark-results/ocr/speed-cuda.log`. System runtime linked through `ORT_LIB_PATH=/usr/lib` and `ORT_PREFER_DYNAMIC_LINK=1`; cuDNN preloaded with `LD_PRELOAD=/usr/lib/libcudnn.so.9`. See [CUDA troubleshooting](../benchmark/README.md#cuda-troubleshooting).
+
+YOLOv9t has the highest measured mAP at 85.91%, only 0.03 percentage points above YOLOv8n. YOLOv8n takes 1.31 ms per crop versus 2.98 ms for YOLOv9t in this speed run, making it a useful starting point for deployment testing. YOLOv5nu is close at 85.47% and 1.30 ms. These small quality and timing differences need repeated measurements before treating them as stable advantages.
+
+YOLOv4-tiny is fastest in this run at 0.985 ms, but its mAP is 20.76 percentage points below YOLOv8n. These results compare the trained checkpoints and current configurations, not the best possible performance of each architecture; the Darknet anchors are still provisional.
+
+The validation annotations were generated automatically and visually spot-checked. Scores measure agreement with those labels, including any remaining annotation errors. They describe individual character detection, not exact plate transcription, character error rate or the complete vehicle -> plate -> OCR cascade. Evaluate the selected model on held-out test data and manually checked examples before drawing conclusions about full-number recognition.
 
 ## Output files
 

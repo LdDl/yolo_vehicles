@@ -125,7 +125,7 @@ See [docs/datasets.md](docs/datasets.md) for class mappings, filtering, and clea
 My Russian license plate datasets are available on Kaggle for the planned vehicle -> plate -> OCR cascade:
 
 - **Plate detection:** [Russian license plates: 5-class detection](https://www.kaggle.com/datasets/dimahkiin/russian-license-plates-5-class-detection). Five categories: civilian, taxi, military, police and diplomatic. The [plate workflow](plates/README.md) includes preparation, training and benchmarking at 320x192 with `--task plates`. Trained weights, ONNX exports and Jetson engines are available in [v0.0.4](https://github.com/LdDl/yolo_vehicles/releases/tag/v0.0.4); see the [benchmark results](plates/README.md#benchmark-results).
-- **Character detection (OCR):** [Russian license plate characters: 23 classes](https://www.kaggle.com/datasets/dimahkiin/russian-license-plate-characters-23-classes). The [OCR workflow](ocr/README.md) includes preparation, training and benchmarking at 224x64 with `--task ocr`. **Training is in progress; trained OCR weights are not published yet.** Full-number decoding is not implemented yet.
+- **Character detection (OCR):** [Russian license plate characters: 23 classes](https://www.kaggle.com/datasets/dimahkiin/russian-license-plate-characters-23-classes). The [OCR workflow](ocr/README.md) includes preparation, training and benchmarking at 224x64 with `--task ocr`. See the [six-model OCR benchmark results](ocr/README.md#benchmark-results). Trained OCR weights are not published yet. Full-number decoding is not implemented yet.
 
 ## Project Structure
 
