@@ -6,6 +6,7 @@ Dataset on Kaggle: my [Russian license plate characters: 23 classes](https://www
 
 ## Table of contents
 
+- [Download trained models](#download-trained-models)
 - [Model settings](#model-settings)
 - [Dataset and splits](#dataset-and-splits)
 - [Download and prepare](#download-and-prepare)
@@ -15,7 +16,16 @@ Dataset on Kaggle: my [Russian license plate characters: 23 classes](https://www
 - [Export to ONNX](#export-to-onnx)
 - [Benchmark](#benchmark)
 - [Benchmark results](#benchmark-results)
+  - [Jetson TensorRT measurements](#jetson-tensorrt-measurements)
 - [Output files](#output-files)
+
+## Download trained models
+
+Trained Russian license plate character detectors are available in [release v0.0.5](https://github.com/LdDl/yolo_vehicles/releases/tag/v0.0.5): YOLOv3-tiny, YOLOv4-tiny, YOLOv5nu, YOLOv8n, YOLOv9t and YOLO11n. The release includes best checkpoints (`.weights` for Darknet, `.pt` for Ultralytics), ONNX exports, Darknet training/inference configs, `ocr.names` and `SHA256SUMS`.
+
+ONNX input is float32 `[1,3,64,224]`, batch 1, with output `[1,27,N]` and no built-in NMS. Release filenames identify the model, such as `yolov8n-ocr_best.onnx`; adjust the benchmark paths below to match your downloads. Class D remains reserved with no training examples in this dataset version.
+
+Vehicle detection models remain in [v0.0.3](https://github.com/LdDl/yolo_vehicles/releases/tag/v0.0.3), and Russian plate detectors in [v0.0.4](https://github.com/LdDl/yolo_vehicles/releases/tag/v0.0.4). For OCR engine builds and measurements on two Jetson configurations, see [Jetson TensorRT measurements](#jetson-tensorrt-measurements).
 
 ## Model settings
 
@@ -272,6 +282,37 @@ YOLOv9t has the highest measured mAP at 85.91%, only 0.03 percentage points abov
 YOLOv4-tiny is fastest in this run at 0.985 ms, but its mAP is 20.76 percentage points below YOLOv8n. These results compare the trained checkpoints and current configurations, not the best possible performance of each architecture; the Darknet anchors are still provisional.
 
 The validation annotations were generated automatically and visually spot-checked. Scores measure agreement with those labels, including any remaining annotation errors. They describe individual character detection, not exact plate transcription, character error rate or the complete vehicle -> plate -> OCR cascade. Evaluate the selected model on held-out test data and manually checked examples before drawing conclusions about full-number recognition.
+
+### Jetson TensorRT measurements
+
+Short `trtexec` runs on 2026-10-06 using the v0.0.5 OCR models at 224x64, batch 1, built with `--fp16`. Each measurement ran for approximately three seconds. Six engines were built separately on each device with these software versions:
+
+| Device | CUDA | cuDNN | TensorRT |
+| :--- | :--- | :--- | :--- |
+| Jetson Nano | 10.2.300 | 8.2.1.32 | 8.2.1.8 |
+| Jetson Orin Nano | 12.6.68 | 9.3.0 | 10.3.0.30 |
+
+| Model | Nano throughput (qps) | Orin Nano throughput (qps) | Nano mean latency (ms) | Orin Nano mean latency (ms) |
+| :--- | ---: | ---: | ---: | ---: |
+| YOLOv3-tiny | 366.31 | 1817.46 | 2.70 | 0.57 |
+| YOLOv4-tiny | 361.33 | 1421.45 | 2.75 | 0.72 |
+| YOLOv5nu | 165.31 | 846.42 | 5.96 | 1.20 |
+| YOLOv8n | 161.73 | 816.98 | 6.10 | 1.25 |
+| YOLOv9t | 57.26 | 369.63 | 17.35 | 2.72 |
+| YOLO11n | 108.64 | 639.03 | 9.11 | 1.58 |
+
+Throughput counts inference queries per second. Mean latency is the reported `Latency`, including host-to-device transfer, GPU computation and device-to-host transfer. These runs exclude image preprocessing, external NMS, character ordering and video decoding. They are separate from the Rust detector benchmark above. `trtexec` overlaps queries, so throughput need not equal 1000 divided by mean latency. See [NVIDIA's metric definitions](https://docs.nvidia.com/deeplearning/tensorrt/10.x.x/performance/benchmarking.html).
+
+YOLOv3-tiny had the highest throughput on both devices. Among the models with similar ONNX validation mAP, YOLOv8n took 6.10 ms on Nano and 1.25 ms on Orin Nano, compared with 17.35 ms and 2.72 ms for YOLOv9t. Detection quality of the FP16 engines has not been measured, so the ONNX accuracy table should not be treated as an engine accuracy result. Power modes and clock settings were not recorded; these short runs describe these particular builds and runs.
+
+Engine filenames include the target device and software stack. For example:
+
+```text
+yolov8n-ocr_best_jetson_nano_cuda-10.2.300_cudnn-8.2.1.32_trt-8.2.1.8_fp16.engine
+yolov8n-ocr_best_jetson_orin_nano_cuda-12.6.68_cudnn-9.3.0_trt-10.3.0.30_fp16.engine
+```
+
+Use an engine matching the target device and software stack, or rebuild from ONNX on that device. Source measurements are saved in `benchmark-results/ocr/jetson-trtexec-2026-10-06.log`.
 
 ## Output files
 
