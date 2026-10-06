@@ -1,33 +1,49 @@
-# License plate character detection
+# Russian license plate character detection
 
-The third stage of the vehicle -> plate -> OCR cascade: detect individual characters inside a cropped license plate. The initial comparison uses YOLOv3-tiny, YOLOv4-tiny, YOLOv5nu, YOLOv8n, YOLOv9t and YOLO11n at **224x64**, width x height, with letterbox. Full-number decoding, row ordering and transcription metrics are not implemented yet.
+23-class character detection for **Russian license plates**, using YOLOv3-tiny, YOLOv4-tiny, YOLOv5nu, YOLOv8n, YOLOv9t and YOLO11n. Dataset on Kaggle: my [Russian license plate characters: 23 classes](https://www.kaggle.com/datasets/dimahkiin/russian-license-plate-characters-23-classes).
 
-Dataset on Kaggle: my [Russian license plate characters: 23 classes](https://www.kaggle.com/datasets/dimahkiin/russian-license-plate-characters-23-classes). It contains plate crops with individual character boxes, including partial plates, multiple visible plates and backgrounds.
+This is the character detector stage of a planned vehicle -> plate -> OCR cascade. The dataset contains plate crops with individual character boxes, including partial plates, multiple visible plates and backgrounds. Full-number decoding, row ordering and transcription metrics are not implemented yet. The separate [plate detection workflow](../plates/README.md) locates and classifies Russian plates at 320x192.
 
 ## Table of contents
 
 - [Download trained models](#download-trained-models)
-- [Model settings](#model-settings)
-- [Dataset and splits](#dataset-and-splits)
+- [Classes and splits](#classes-and-splits)
 - [Download and prepare](#download-and-prepare)
 - [Train models](#train-models)
   - [Darknet](#darknet)
   - [Ultralytics](#ultralytics)
-- [Export to ONNX](#export-to-onnx)
+- [Export Darknet to ONNX](#export-darknet-to-onnx)
 - [Benchmark](#benchmark)
 - [Benchmark results](#benchmark-results)
   - [Jetson TensorRT measurements](#jetson-tensorrt-measurements)
+- [Input size experiments](#input-size-experiments)
 - [Output files](#output-files)
 
 ## Download trained models
 
-Trained Russian license plate character detectors are available in [release v0.0.5](https://github.com/LdDl/yolo_vehicles/releases/tag/v0.0.5): YOLOv3-tiny, YOLOv4-tiny, YOLOv5nu, YOLOv8n, YOLOv9t and YOLO11n. The release includes best checkpoints (`.weights` for Darknet, `.pt` for Ultralytics), ONNX exports, Darknet training/inference configs, `ocr.names` and `SHA256SUMS`.
+Ready-to-use character detectors are available in [release v0.0.5](https://github.com/LdDl/yolo_vehicles/releases/tag/v0.0.5). It includes YOLOv3-tiny, YOLOv4-tiny, YOLOv5nu, YOLOv8n, YOLOv9t and YOLO11n with 23 classes in the order below. Vehicle detection models remain in [v0.0.3](https://github.com/LdDl/yolo_vehicles/releases/tag/v0.0.3), and Russian plate detectors in [v0.0.4](https://github.com/LdDl/yolo_vehicles/releases/tag/v0.0.4).
 
-ONNX input is float32 `[1,3,64,224]`, batch 1, with output `[1,27,N]` and no built-in NMS. Release filenames identify the model, such as `yolov8n-ocr_best.onnx`; adjust the benchmark paths below to match your downloads. Class D remains reserved with no training examples in this dataset version.
+- Best checkpoints: `.weights` for Darknet and `.pt` for Ultralytics.
+- Float32 ONNX exports with input `[1,3,64,224]` and output `[1,27,N]`, without built-in NMS.
+- Darknet training and inference configs, `ocr.names` and `SHA256SUMS`.
 
-Vehicle detection models remain in [v0.0.3](https://github.com/LdDl/yolo_vehicles/releases/tag/v0.0.3), and Russian plate detectors in [v0.0.4](https://github.com/LdDl/yolo_vehicles/releases/tag/v0.0.4). For OCR engine builds and measurements on two Jetson configurations, see [Jetson TensorRT measurements](#jetson-tensorrt-measurements).
+Twelve TensorRT engines were also built with FP16 enabled: one per model for each configuration below. See the [Jetson measurements](#jetson-tensorrt-measurements) for their results.
 
-## Model settings
+| Device | CUDA | cuDNN | TensorRT |
+| :--- | :--- | :--- | :--- |
+| Jetson Nano | 10.2.300 | 8.2.1.32 | 8.2.1.8 |
+| Jetson Orin Nano | 12.6.68 | 9.3.0 | 10.3.0.30 |
+
+Engine names identify the model and target configuration. For example:
+
+```text
+yolov8n-ocr_best_jetson_nano_cuda-10.2.300_cudnn-8.2.1.32_trt-8.2.1.8_fp16.engine
+yolov8n-ocr_best_jetson_orin_nano_cuda-12.6.68_cudnn-9.3.0_trt-10.3.0.30_fp16.engine
+```
+
+Choose the engine matching your device and software stack. For a different configuration, build from ONNX on the target device. The Rust benchmark uses ONNX; release files have names such as `yolov8n-ocr_best.onnx`, so adjust the model paths in the commands below to match your downloads.
+
+## Classes and splits
 
 The initial alphabet has 23 classes. [classes.names](classes.names) defines the ID order, starting at zero:
 
@@ -38,12 +54,6 @@ The initial alphabet has 23 classes. [classes.names](classes.names) defines the 
 The preparation script reads `ocr/classes.names` and writes the same list to `data/generated/ocr.names`. Use either file for inference; the generated copy is a local training artifact. Plate detection follows the same convention with [plates/classes.names](../plates/classes.names).
 
 Letters use Latin characters. `D` is class 22, reserved for diplomatic plates. The published v1 dataset has no D examples, but the class stays in the dataset YAML, Darknet heads, exported models and benchmark. No D recognition quality can be measured from this version. A change to the alphabet requires matching changes to the annotations, Darknet classes/filters, training configuration and benchmark class list.
-
-Darknet uses 23 classes and 84 filters before each detection layer: `(23 + 5) * 3`. Both training and inference configs use 224x64. Letterbox preserves each crop's proportions. Flipping, mosaic, crop jitter and random input resizing are disabled. Anchors are provisional character-sized values, not fitted to annotations. Batch 64, subdivisions 4 and 46000 iterations with learning-rate drops at 36800/41400 are starting settings, not measured optimal values.
-
-Ultralytics training uses `imgsz=224` and `rect=True`; batch shapes vary with the image proportions and are not fixed at 224x64. Export fixes the input to `[1,3,64,224]`. Flipping, mosaic, mixup, rotation, shear, perspective and hue/saturation augmentation are disabled for this task.
-
-## Dataset and splits
 
 The published v1 dataset contains 85,455 images:
 
@@ -90,13 +100,15 @@ Preparation generates training inputs only. The already published annotations do
 
 ## Train models
 
-Download initialization weights if they are not already present:
+The initial comparison uses 224x64 letterboxed inference input. This is a starting size for the OCR experiment; evaluate small characters in the original crops before choosing a deployment size. Training outputs use the `-ocr` suffix and do not share runs with vehicle or plate models.
+
+Download the COCO initialization weights once:
 
 ```bash
 python3 scripts/download_pretrained.py --model all
 ```
 
-Run each model separately. OCR checkpoints use `weights/*-ocr/`; vehicle and plate checkpoints stay in their own task directories. Fresh runs reject an existing output directory.
+Run the following training commands individually. No model is trained by the dataset preparation script.
 
 ### Darknet
 
@@ -110,13 +122,17 @@ bash scripts/train_darknet.sh v3-tiny --task ocr
 bash scripts/train_darknet.sh v4-tiny --task ocr
 ```
 
-Darknet uses [yolov3-tiny-ocr.cfg](configs/yolov3-tiny-ocr.cfg) or [yolov4-tiny-ocr.cfg](configs/yolov4-tiny-ocr.cfg), with 23 classes and 84 filters before each detection layer. COCO configs are only used to extract initialization weights for the first 11 layers of v3-tiny or 29 layers of v4-tiny. The OCR-specific detection heads are trained from that initialization. Matching training and inference configs are copied into each run directory.
+Training uses [yolov3-tiny-ocr.cfg](configs/yolov3-tiny-ocr.cfg) or [yolov4-tiny-ocr.cfg](configs/yolov4-tiny-ocr.cfg): 23 classes, 84 filters before each detection layer, batch 64, subdivisions 4, 46000 iterations and learning-rate drops at 36800/41400. These are starting settings, not measured optimal values. COCO configs are used only to extract the first 11 or 29 layers from pretrained weights. The OCR-specific detection heads are trained from that initialization. Matching training and inference configs are copied into each run directory.
+
+Letterbox is enabled. Flipping, mosaic, crop jitter and random input resizing are disabled to preserve characters. Anchors are provisional character-sized values, not fitted to annotations; adjust them only from training labels when exploring a separate experiment.
 
 Resume an interrupted run:
 
 ```bash
 bash scripts/train_darknet.sh v3-tiny --task ocr --resume weights/yolov3-tiny-ocr/yolov3-tiny-ocr_last.weights
 ```
+
+To start from random initialization, add `--scratch` to a fresh run. Existing run directories are rejected for fresh training. Keep previous runs under another name before starting a new experiment.
 
 ### Ultralytics
 
@@ -142,7 +158,7 @@ python3 scripts/train_ultralytics.py --task ocr --model v9t
 python3 scripts/train_ultralytics.py --task ocr --model v11n
 ```
 
-These commands use `data/generated/ocr.yaml`, COCO pretrained weights, batch 16, 100 epochs and patience 20. YOLOv5nu is the updated `u` variant. Each run exports its best checkpoint to float32 ONNX at 224x64. To use a separate experiment directory, pass `--output weights/experiment-name`.
+These commands use `data/generated/ocr.yaml`, COCO pretrained weights, `imgsz=224`, rectangular batching, batch 16, 100 epochs and patience 20. Flipping, mosaic, mixup, rotation, shear, perspective and hue/saturation augmentation are disabled for this task. YOLOv5nu is the updated `u` variant, not original YOLOv5n. Each command exports its best checkpoint to static float32 ONNX with input `[1,3,64,224]` and no embedded NMS. Training batch shapes vary with the image proportions and are not fixed at 224x64.
 
 Resume an interrupted run:
 
@@ -150,9 +166,11 @@ Resume an interrupted run:
 python3 scripts/train_ultralytics.py --task ocr --model v8n --resume weights/yolov8n-ocr/weights/last.pt
 ```
 
-## Export to ONNX
+Resume uses the checkpoint's training settings. For a new experiment, `--output weights/experiment-name` selects a separate run location.
 
-Ultralytics training automatically exports `best.pt` to `best.onnx`. Convert Darknet checkpoints separately:
+## Export Darknet to ONNX
+
+Ultralytics training automatically exports `best.pt` to `best.onnx`. With [darknet2onnx](https://github.com/LdDl/darknet2onnx) installed, convert Darknet checkpoints separately:
 
 ```bash
 darknet2onnx --format yolov8 --cfg weights/yolov3-tiny-ocr/yolov3-tiny-ocr-infer.cfg --weights weights/yolov3-tiny-ocr/yolov3-tiny-ocr_best.weights --output weights/yolov3-tiny-ocr/yolov3-tiny-ocr_best.onnx
@@ -162,11 +180,11 @@ darknet2onnx --format yolov8 --cfg weights/yolov3-tiny-ocr/yolov3-tiny-ocr-infer
 darknet2onnx --format yolov8 --cfg weights/yolov4-tiny-ocr/yolov4-tiny-ocr-infer.cfg --weights weights/yolov4-tiny-ocr/yolov4-tiny-ocr_best.weights --output weights/yolov4-tiny-ocr/yolov4-tiny-ocr_best.onnx
 ```
 
-All six exports use static float32 input `[1,3,64,224]`, output `[1,27,N]` and no embedded NMS. The Rust benchmark checks these dimensions when loading the model.
+All six OCR models use output `[1,27,N]`: four box coordinates and 23 class scores. `darknet2onnx --format yolov8` includes objectness in the class scores. The Rust benchmark does not need OpenCV and checks the static float32 input `[1,3,64,224]` and output dimensions when loading the model.
 
 ## Benchmark
 
-Build the shared program using the [benchmark instructions](../benchmark/README.md#build). The commands below use CUDA; omit `--cuda` for CPU. If preparation used a custom dataset directory, adjust the image and label paths. Remove model arguments for models that have not finished training.
+Follow the [benchmark build instructions](../benchmark/README.md#build). The shared executable uses `--task ocr` to select the 23-class alphabet; the default remains `vehicles`. Pass only the model arguments whose weights are ready. For CPU, omit `--cuda`. If preparation used a custom dataset directory, adjust the image and label paths.
 
 ```bash
 mkdir -p benchmark-results/ocr
@@ -224,17 +242,6 @@ Validation results on my **Russian license plate character dataset**, measured o
 
 > **Note on timing:** Accuracy comes from the full validation run. Timing comes from a separate run with 50 warmup calls and 1,000 measured calls per model. It includes preprocessing, inference and postprocessing, excluding image loading. FPS describes this detector call on the measured GPU and crop, not a complete video stream or Jetson performance.
 
-**Detection metrics at confidence 0.25:**
-
-| Model | Precision (micro) | Recall (micro) | F1 (micro) |
-| :--- | ---: | ---: | ---: |
-| YOLOv3-tiny | 77.64% | 67.38% | 72.15% |
-| YOLOv4-tiny | 81.73% | 75.85% | 78.68% |
-| YOLOv5nu | 92.56% | 89.84% | 91.18% |
-| YOLOv8n | 92.43% | 90.18% | 91.29% |
-| YOLOv9t | 92.52% | 90.28% | 91.39% |
-| YOLO11n | 92.68% | 89.80% | 91.22% |
-
 <details>
 <summary>Per-character AP@0.50</summary>
 
@@ -268,6 +275,17 @@ Validation results on my **Russian license plate character dataset**, measured o
 
 </details>
 
+**Detection metrics at confidence 0.25:**
+
+| Model | Precision (micro) | Recall (micro) | F1 (micro) |
+| :--- | ---: | ---: | ---: |
+| YOLOv3-tiny | 77.64% | 67.38% | 72.15% |
+| YOLOv4-tiny | 81.73% | 75.85% | 78.68% |
+| YOLOv5nu | 92.56% | 89.84% | 91.18% |
+| YOLOv8n | 92.43% | 90.18% | 91.29% |
+| YOLOv9t | 92.52% | 90.28% | 91.39% |
+| YOLO11n | 92.68% | 89.80% | 91.22% |
+
 **Measurement setup:**
 
 - NVIDIA GeForce RTX 5060 Ti, AMD Ryzen 7 7800X3D, ONNX Runtime 1.29.0 / CUDA (system build).
@@ -285,12 +303,7 @@ The validation annotations were generated automatically and visually spot-checke
 
 ### Jetson TensorRT measurements
 
-Short `trtexec` runs on 2026-10-06 using the v0.0.5 OCR models at 224x64, batch 1, built with `--fp16`. Each measurement ran for approximately three seconds. Six engines were built separately on each device with these software versions:
-
-| Device | CUDA | cuDNN | TensorRT |
-| :--- | :--- | :--- | :--- |
-| Jetson Nano | 10.2.300 | 8.2.1.32 | 8.2.1.8 |
-| Jetson Orin Nano | 12.6.68 | 9.3.0 | 10.3.0.30 |
+Short `trtexec` runs on 2026-10-06 using the v0.0.5 OCR models at 224x64, batch 1, built with `--fp16`. Device and software versions are listed in [Download trained models](#download-trained-models). Each measurement ran for approximately three seconds.
 
 | Model | Nano throughput (qps) | Orin Nano throughput (qps) | Nano mean latency (ms) | Orin Nano mean latency (ms) |
 | :--- | ---: | ---: | ---: | ---: |
@@ -305,20 +318,16 @@ Throughput counts inference queries per second. Mean latency is the reported `La
 
 YOLOv3-tiny had the highest throughput on both devices. Among the models with similar ONNX validation mAP, YOLOv8n took 6.10 ms on Nano and 1.25 ms on Orin Nano, compared with 17.35 ms and 2.72 ms for YOLOv9t. Detection quality of the FP16 engines has not been measured, so the ONNX accuracy table should not be treated as an engine accuracy result. Power modes and clock settings were not recorded; these short runs describe these particular builds and runs.
 
-Engine filenames include the target device and software stack. For example:
+Source measurements are saved in `benchmark-results/ocr/jetson-trtexec-2026-10-06.log`.
 
-```text
-yolov8n-ocr_best_jetson_nano_cuda-10.2.300_cudnn-8.2.1.32_trt-8.2.1.8_fp16.engine
-yolov8n-ocr_best_jetson_orin_nano_cuda-12.6.68_cudnn-9.3.0_trt-10.3.0.30_fp16.engine
-```
+## Input size experiments
 
-Use an engine matching the target device and software stack, or rebuild from ONNX on that device. Source measurements are saved in `benchmark-results/ocr/jetson-trtexec-2026-10-06.log`.
+Compare the initial 224x64 input against other sizes using the same validation split and device. Keep the baseline run intact. For Darknet, update both the training and inference configs consistently and re-export; for Ultralytics, set `--imgsz`, `--export-width` and `--export-height` with a fresh `--output` directory. Training uses a single `imgsz` plus rectangular batching; ONNX export fixes the exact dimensions. Set benchmark `--width` and `--height` to match that experiment. A benchmark flag does not resize the ONNX graph; mismatched inputs are rejected.
 
 ## Output files
 
-- `ocr/configs/`: source Darknet training and inference configs.
-- `ocr/classes.names`: character ID order.
-- `ocr/prepare_dataset.py`, `ocr/requirements.txt`: published dataset preparation and its dependencies.
+- `ocr/`: documentation, preparation script, dependencies and source configs.
+- `ocr/classes.names`: class names in ID order, stored in the repository.
 - `datasets/raw/`: downloaded archives; safe to remove after successful extraction.
 - `datasets/ocr/`: extracted images and annotations used for training and evaluation.
 - `data/generated/ocr.yaml`: Ultralytics dataset paths and all 23 classes.
